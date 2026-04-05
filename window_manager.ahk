@@ -374,6 +374,21 @@ HandleConfiguredPullBuilderKeyDown(wParam, lParam, msg, hwnd) {
         return 0
     }
 
+    if keyName = "Left" || keyName = "Right" {
+        if ConfiguredPullBuilderState["selectedHotkey"] != "" && ConfiguredPullBuilderState["editingKind"] = "app" {
+            SelectBuilderBehavior(keyName = "Left" ? "main" : "burner")
+            ConfiguredPullBuilderState["applyButton"].Focus()
+        }
+        return 0
+    }
+
+    if keyName = "Enter" {
+        if ConfiguredPullBuilderState["selectedHotkey"] != "" {
+            ConfiguredPullBuilderState["applyButton"].Focus()
+        }
+        return
+    }
+
     if keyName = "Escape" {
         SetConfiguredPullBuilderHotkey("", "")
         return 0
@@ -624,6 +639,9 @@ SetConfiguredPullBuilderHotkey(hotkey, display) {
     ConfiguredPullBuilderState["selectedHotkey"] := hotkey
     ConfiguredPullBuilderState["selectedHotkeyDisplay"] := display
     ConfiguredPullBuilderState["selectedKeyText"].Text := display
+    if hotkey != "" {
+        ConfiguredPullBuilderState["applyButton"].Focus()
+    }
     UpdateConfiguredPullBuilderConflictState()
 }
 
