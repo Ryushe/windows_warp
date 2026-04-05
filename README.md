@@ -32,7 +32,7 @@ This setup works like a desktop workspace mover:
 - Hotkeyed apps can be stacked on top of each other on the main monitor so you can jump straight to the exact app you want.
 - If you need space, you can send selected apps back to the burner monitor with the same hotkey.
 - `Win+X` and `Win+C` move the focused window left or right across monitors while preserving its relative placement.
-- `Win+R` pulls back the most recently pushed normal window.
+- `Win+R` pulls back the most recently pushed normal window (doesn't store hotkeyed apps)
 - `Win+B` opens the app-hotkey builder for the currently focused window.
 - `Win+;` toggles the window-manager hotkeys on and off.
 - The order of normal pushed windows is remembered, so repeated pulls restore them in reverse order.
@@ -53,8 +53,8 @@ This setup works like a desktop workspace mover:
 - The hotkey browser uses pages with `Previous` / `Next` controls instead of free scrolling.
 - The builder warns immediately about conflicts.
 - Click `Apply` to save the config and auto-reload the script.
-- App hotkeys are stored in [window_manager_apps.ini](/C:/Users/jaady/OneDrive/Documentos/hotkeyable_windows/window_manager_apps.ini).
-- Shared script hotkeys are stored in [hotkey_registry.ini](/C:/Users/jaady/OneDrive/Documentos/hotkeyable_windows/hotkey_registry.ini).
+- App hotkeys are stored in `window_manager_apps.ini`
+- Shared script hotkeys are stored in `hotkey_registry.ini`
 
 ### `fullscreen.ahk`
 Small helper script related to fullscreen window behavior.
@@ -65,6 +65,6 @@ Small helper script for closing/killing a target application or window.
 ## Notes
 
 - Scripts are written for AutoHotkey v2.
-- Managed app hotkeys are stored in [window_manager_apps.ini](/C:/Users/jaady/OneDrive/Documentos/hotkeyable_windows/window_manager_apps.ini).
-- Shared repo-wide hotkey reservations are stored in [hotkey_registry.ini](/C:/Users/jaady/OneDrive/Documentos/hotkeyable_windows/hotkey_registry.ini).
-- Core monitor behavior and hotkey logic live in [window_manager.ahk](/C:/Users/jaady/OneDrive/Documentos/hotkeyable_windows/window_manager.ahk).
+- Managed app hotkeys are stored in `window_manager_apps.ini`
+- Shared repo-wide hotkey reservations are stored in `hotkey_registry.ini`
+- Core monitor behavior and hotkey logic live in `window_manager.ahk`
