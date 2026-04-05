@@ -6,8 +6,8 @@ The replacement for Alt+Tab that you've been looking for. Switch to apps immedia
 
 1. Install AutoHotkey v2.
 2. Clone or download this folder to your machine.
-3. Run `window_manager.ahk`.
-4. If you want the helper hotkeys too, run `fullscreen.ahk` and `kill.ahk`.
+3. Run `Windows Warp.ahk`.
+4. Optional: add `Windows Warp.ahk` to Startup if you want it to launch with Windows.
 5. Use `Win+B` to open the editor and adjust app hotkeys or workspace openers.
 
 ## Features
@@ -45,6 +45,7 @@ The replacement for Alt+Tab that you've been looking for. Switch to apps immedia
 ## Notes
 
 - Scripts are written for AutoHotkey v2.
+- `Windows Warp.ahk` is the single entry point and tray icon.
 - App hotkeys are stored in `window_manager_apps.ini`.
 - Shared hotkeys are stored in `hotkey_registry.ini`.
 - Workspace opener profiles are stored locally in `workspace_openers.ini`.

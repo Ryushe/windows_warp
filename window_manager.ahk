@@ -3083,6 +3083,10 @@ ApplySharedHotkeyLiveState(sharedId, hotkey, enable) {
             Hotkey(hotkey, enable ? "On" : "Off")
         case "wm.toggle-suspend":
             Hotkey(hotkey, enable ? "On" : "Off")
+        case "fullscreen.toggle":
+            Hotkey(hotkey, enable ? "On" : "Off")
+        case "kill.close-active":
+            Hotkey(hotkey, enable ? "On" : "Off")
         default:
             ReloadExternalSharedHotkeyScript(sharedId)
     }

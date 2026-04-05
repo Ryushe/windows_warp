@@ -1,10 +1,9 @@
 #Requires AutoHotkey v2.0
-#SingleInstance Force
 
 global Saved := Map()
 global SharedHotkeyRegistryPath := A_ScriptDir "\hotkey_registry.ini"
 
-fullscreenHotkey := GetSharedHotkey("fullscreen.toggle", "#z")
+fullscreenHotkey := Fullscreen_GetSharedHotkey("fullscreen.toggle", "#z")
 if fullscreenHotkey != "" {
     Hotkey(fullscreenHotkey, Func("ToggleFullscreenWindow"))
 }
@@ -39,7 +38,7 @@ ToggleFullscreenWindow(*) {
     WinMaximize(hwnd)
 }
 
-GetSharedHotkey(id, fallback := "") {
+Fullscreen_GetSharedHotkey(id, fallback := "") {
     global SharedHotkeyRegistryPath
 
     if !FileExist(SharedHotkeyRegistryPath) {
