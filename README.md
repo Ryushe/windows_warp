@@ -40,12 +40,17 @@ This setup works like a desktop workspace mover:
 ## App Hotkey Builder
 
 - Press `Win+B` while focused on an app window.
-- Choose the modifiers you want, then press the final key.
+- If the focused app already has a hotkey, the builder preloads that existing hotkey and behavior.
+- If the focused app does not have a hotkey yet, the hotkey field shows `None`.
+- Press any key to choose a hotkey. Plain keys default to `Win+<key>` because `Win` starts checked by default.
 - Press `Esc` in the popup if you want to clear the selected key.
-- Choose either `Main monitor config` or `Burner monitor config`.
+- After choosing a hotkey, `Left` selects `Main monitor config` and `Right` selects `Burner monitor config`.
+- After choosing a hotkey, focus moves to `Apply`, so you can press `Enter` to save quickly.
+- You can still choose either `Main monitor config` or `Burner monitor config` with the mouse.
 - Click the `Hotkeys` button to open a hotkey browser popup with clickable hotkey cards.
 - Clicking an app hotkey card loads that binding into the main editor so `Apply` updates that selected app cleanly.
 - Clicking a shared hotkey card loads that shared action into the same editor so shared script bindings can be reassigned too.
+- The hotkey browser uses pages with `Previous` / `Next` controls instead of free scrolling.
 - The builder warns immediately about conflicts.
 - Click `Apply` to save the config and auto-reload the script.
 - App hotkeys are stored in [window_manager_apps.ini](/C:/Users/jaady/OneDrive/Documentos/hotkeyable_windows/window_manager_apps.ini).
