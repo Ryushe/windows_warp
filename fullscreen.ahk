@@ -1,39 +1,60 @@
-﻿#Requires AutoHotkey v2.0
+#Requires AutoHotkey v2.0
 
-; Stores prior placement per-window: Saved[hwnd] := {x, y, w, h}
 global Saved := Map()
+global SharedHotkeyRegistryPath := A_ScriptDir "\hotkey_registry.ini"
 
-#z::  ; Win + Z
-{
+fullscreenHotkey := GetSharedHotkey("fullscreen.toggle", "#z")
+if fullscreenHotkey != "" {
+    Hotkey(fullscreenHotkey, Func("ToggleFullscreenWindow"))
+}
+
+ToggleFullscreenWindow(*) {
     hwnd := WinGetID("A")
     if !hwnd
         return
 
-    state := WinGetMinMax(hwnd) ; -1=min, 0=normal, 1=max
+    state := WinGetMinMax(hwnd)
 
-    ; If currently maximized: restore, then re-apply saved rectangle (retile)
     if (state = 1) {
         WinRestore(hwnd)
-        Sleep 60  ; let Windows finish restoring
+        Sleep 60
 
         if Saved.Has(hwnd) {
             r := Saved[hwnd]
-            ; Re-apply the exact rectangle (works for snapped/tiled too)
             WinMove(r.x, r.y, r.w, r.h, hwnd)
         }
         return
     }
 
-    ; If minimized, restore first so we can capture real placement
     if (state = -1) {
         WinRestore(hwnd)
         Sleep 60
     }
 
-    ; Save current rectangle BEFORE maximizing (this captures tiled/snap position)
     x := y := w := h := 0
     WinGetPos(&x, &y, &w, &h, hwnd)
     Saved[hwnd] := { x: x, y: y, w: w, h: h }
 
     WinMaximize(hwnd)
+}
+
+GetSharedHotkey(id, fallback := "") {
+    global SharedHotkeyRegistryPath
+
+    if !FileExist(SharedHotkeyRegistryPath) {
+        return fallback
+    }
+
+    count := IniRead(SharedHotkeyRegistryPath, "Meta", "count", "0") + 0
+    Loop count {
+        section := "Hotkey" . A_Index
+        entryId := IniRead(SharedHotkeyRegistryPath, section, "id", "")
+        if entryId != id {
+            continue
+        }
+
+        return IniRead(SharedHotkeyRegistryPath, section, "hotkey", "")
+    }
+
+    return fallback
 }
