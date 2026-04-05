@@ -1,4 +1,5 @@
 #Requires AutoHotkey v2.0
+#SingleInstance Force
 
 global Saved := Map()
 global SharedHotkeyRegistryPath := A_ScriptDir "\hotkey_registry.ini"
