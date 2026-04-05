@@ -313,6 +313,7 @@ OpenConfiguredHotkeyBuilder(*) {
         "keyboardPageLabel", 0,
         "keyboardPrevButton", 0,
         "keyboardNextButton", 0,
+        "captureReadyAt", A_TickCount + 200,
         "winCheckbox", winCheckbox,
         "ctrlCheckbox", ctrlCheckbox,
         "altCheckbox", altCheckbox,
@@ -336,6 +337,7 @@ OpenConfiguredHotkeyBuilder(*) {
     )
 
     SetConfiguredPullBuilderEditingMode("app", windowInfo)
+    LoadActiveWindowConfigIntoBuilder(windowInfo)
     builderGui.Show("w560 h526 Center")
     winCheckbox.Focus()
 }
@@ -361,6 +363,10 @@ HandleConfiguredPullBuilderKeyDown(wParam, lParam, msg, hwnd) {
 
     if WinExist("A") != ConfiguredPullBuilderState["guiHwnd"] {
         return
+    }
+
+    if A_TickCount < ConfiguredPullBuilderState["captureReadyAt"] {
+        return 0
     }
 
     keyName := NormalizeBuilderKeyName(wParam, lParam)
@@ -454,12 +460,19 @@ IsBuilderModifierKey(keyName) {
         "Shift", true,
         "LShift", true,
         "RShift", true,
+        "Control", true,
         "Ctrl", true,
+        "LControl", true,
+        "RControl", true,
         "LCtrl", true,
         "RCtrl", true,
         "Alt", true,
+        "Menu", true,
+        "LMenu", true,
+        "RMenu", true,
         "LAlt", true,
         "RAlt", true,
+        "Win", true,
         "LWin", true,
         "RWin", true
     )
@@ -571,6 +584,34 @@ GetHotkeyDisplayName(keyName) {
     }
 
     return keyName
+}
+
+LoadActiveWindowConfigIntoBuilder(windowInfo) {
+    global ConfiguredPullHotkeys
+    global ConfiguredPullBuilderState
+
+    if !ConfiguredPullBuilderState.Count {
+        return
+    }
+
+    sameAppIndex := FindConfiguredPullIndexByMatch(windowInfo["match"])
+    if sameAppIndex {
+        config := ConfiguredPullHotkeys[sameAppIndex]
+        ApplyHotkeyToBuilderControls(config["hotkey"])
+        if GetMainMonitorAction(config) = "focus-last" {
+            SelectBuilderBehavior("main")
+        } else {
+            SelectBuilderBehavior("burner")
+        }
+        return
+    }
+
+    ConfiguredPullBuilderState["winCheckbox"].Value := 1
+    ConfiguredPullBuilderState["ctrlCheckbox"].Value := 0
+    ConfiguredPullBuilderState["altCheckbox"].Value := 0
+    ConfiguredPullBuilderState["shiftCheckbox"].Value := 0
+    SelectBuilderBehavior("main")
+    SetConfiguredPullBuilderHotkey("", "None")
 }
 
 SetConfiguredPullBuilderHotkey(hotkey, display) {
@@ -1224,7 +1265,7 @@ ParseHotkeyForBuilder(hotkey) {
 
 GetDisplayForHotkey(hotkey) {
     if hotkey = "" {
-        return "Unassigned"
+        return "None"
     }
 
     displayParts := []
