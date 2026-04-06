@@ -5,7 +5,7 @@ global SharedHotkeyRegistryPath := A_ScriptDir "\hotkey_registry.ini"
 
 fullscreenHotkey := Fullscreen_GetSharedHotkey("fullscreen.toggle", "#z")
 if fullscreenHotkey != "" {
-    Hotkey(fullscreenHotkey, Func("ToggleFullscreenWindow"))
+    Hotkey(fullscreenHotkey, ToggleFullscreenWindow)
 }
 
 ToggleFullscreenWindow(*) {

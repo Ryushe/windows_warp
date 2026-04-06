@@ -4,7 +4,7 @@ global SharedHotkeyRegistryPath := A_ScriptDir "\hotkey_registry.ini"
 
 killHotkey := Kill_GetSharedHotkey("kill.close-active", "#q")
 if killHotkey != "" {
-    Hotkey(killHotkey, Func("CloseActiveWindow"))
+    Hotkey(killHotkey, CloseActiveWindow)
 }
 
 CloseActiveWindow(*) {
