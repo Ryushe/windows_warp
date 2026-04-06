@@ -8,6 +8,10 @@ if killHotkey != "" {
 }
 
 CloseActiveWindow(*) {
+    if !Kill_WindowWarpHotkeysAreEnabled() {
+        return
+    }
+
     hwnd := WinExist("A")
     if hwnd {
         WinClose hwnd
@@ -33,4 +37,12 @@ Kill_GetSharedHotkey(id, fallback := "") {
     }
 
     return fallback
+}
+
+Kill_WindowWarpHotkeysAreEnabled() {
+    try {
+        return WindowWarpHotkeysEnabled
+    } catch {
+        return true
+    }
 }

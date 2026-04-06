@@ -19,7 +19,7 @@ The replacement for Alt+Tab that you've been looking for. Switch to apps immedia
 - Save and relaunch workspace opener profiles for commonly used app layouts.
 - Browse existing hotkeys from a dedicated hotkey browser.
 - Reassign shared hotkeys and create custom app hotkeys without hand-editing the script.
-- Temporarily suspend the window manager hotkeys.
+- Toggle all Windows Warp hotkeys on or off.
 - Support main-monitor and burner-monitor app behaviors.
 
 ## Default Hotkeys
@@ -33,8 +33,8 @@ The replacement for Alt+Tab that you've been looking for. Switch to apps immedia
 | `Win+R` | Pull most recent window |
 | `Win+B` | Open hotkey editor |
 | `Win+O` | Open workspace openers |
-| `Win+;` | Toggle window-manager hotkeys |
-| `Win+Z` | Toggle fullscreen helper |
+| `Win+;` | Toggle hotkeys |
+| `Win+Z` | Toggle fullscreen |
 | `Win+Q` | Close active window |
 | `Win+D` | Discord |
 | `Win+A` | Claude |

@@ -24,15 +24,16 @@ global ConfiguredPullHotkeys := InitializeConfiguredPullHotkeys()
 global WorkspaceOpenerProfiles := LoadWorkspaceOpenerProfiles()
 global LastLaunchedWorkspaceId := ""
 global LastUpdatedWorkspaceId := ""
+global WindowWarpHotkeysEnabled := true
 
-#x::MoveWindowDirection("left", false)
-#c::MoveWindowDirection("right", false)
-#^x::MoveWindowDirection("left", true)
-#^c::MoveWindowDirection("right", true)
-#b::OpenConfiguredHotkeyBuilder()
-#o::OpenWorkspaceOpenerBrowser()
-#y::OpenWorkspaceUpdateDialog()
-#r::PullMostRecentWindow()
+#x::HandleMoveWindowDirectionHotkey("left", false)
+#c::HandleMoveWindowDirectionHotkey("right", false)
+#^x::HandleMoveWindowDirectionHotkey("left", true)
+#^c::HandleMoveWindowDirectionHotkey("right", true)
+#b::HandleOpenConfiguredHotkeyBuilderHotkey()
+#o::HandleOpenWorkspaceOpenerHotkey()
+#y::HandleOpenWorkspaceUpdateHotkey()
+#r::HandlePullMostRecentWindowHotkey()
 #SuspendExempt
 #;::ToggleWindowManagerSuspend()
 #SuspendExempt False

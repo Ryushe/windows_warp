@@ -28,6 +28,8 @@ InitializeSharedHotkeyRegistry() {
     if registry.Length = 0 {
         registry := DefaultSharedHotkeyRegistry()
         SaveSharedHotkeyRegistry(registry)
+    } else if NormalizeSharedHotkeyRegistryActions(registry) {
+        SaveSharedHotkeyRegistry(registry)
     }
 
     return registry
@@ -59,10 +61,32 @@ DefaultSharedHotkeyRegistry() {
         Map("id", "wm.open-opener", "hotkey", "#o", "action", "Open workspace opener", "source", "script", "script", "window_manager.ahk"),
         Map("id", "wm.update-workspace", "hotkey", "#y", "action", "Update workspace", "source", "script", "script", "window_manager.ahk"),
         Map("id", "wm.pull-recent", "hotkey", "#r", "action", "Pull most recent window", "source", "script", "script", "window_manager.ahk"),
-        Map("id", "wm.toggle-suspend", "hotkey", "#;", "action", "Toggle window manager hotkeys", "source", "script", "script", "window_manager.ahk"),
-        Map("id", "fullscreen.toggle", "hotkey", "#z", "action", "Toggle fullscreen helper", "source", "script", "script", "fullscreen.ahk"),
+        Map("id", "wm.toggle-suspend", "hotkey", "#;", "action", "Toggle hotkeys", "source", "script", "script", "window_manager.ahk"),
+        Map("id", "fullscreen.toggle", "hotkey", "#z", "action", "Toggle fullscreen", "source", "script", "script", "fullscreen.ahk"),
         Map("id", "kill.close-active", "hotkey", "#q", "action", "Close active window", "source", "script", "script", "kill.ahk")
     ]
+}
+
+NormalizeSharedHotkeyRegistryActions(registry) {
+    changed := false
+    for _, entry in registry {
+        if !entry.Has("id") {
+            continue
+        }
+
+        if entry["id"] = "wm.toggle-suspend" && entry["action"] != "Toggle hotkeys" {
+            entry["action"] := "Toggle hotkeys"
+            changed := true
+            continue
+        }
+
+        if entry["id"] = "fullscreen.toggle" && entry["action"] != "Toggle fullscreen" {
+            entry["action"] := "Toggle fullscreen"
+            changed := true
+        }
+    }
+
+    return changed
 }
 
 LoadSharedHotkeyRegistry() {
@@ -313,8 +337,9 @@ OpenConfiguredHotkeyBuilder(*) {
     headerBar := builderGui.AddText("x0 y0 w624 h38 Background" . uiTheme["header"], "")
     headerBar.OnEvent("Click", (*) => StartGuiDrag(builderGui))
     builderGui.SetFont("s11", "Segoe UI Semibold")
-    headerTitle := builderGui.AddText("x14 y9 w548 c" . uiTheme["headerText"], "Hotkey Editor")
+    headerTitle := builderGui.AddText("x14 y9 w420 c" . uiTheme["headerText"], "Hotkey Editor")
     headerTitle.OnEvent("Click", (*) => StartGuiDrag(builderGui))
+    statusText := builderGui.AddText("x444 y9 w170 Right c" . GetWindowWarpStatusColor(uiTheme, WindowWarpHotkeysEnabled), GetWindowWarpStatusLabel())
     closeButton := builderGui.AddText("x630 y5 w26 h26 Center c" . uiTheme["headerText"] . " Background" . uiTheme["closeFill"] . " +0x200 Border", "X")
     closeButton.OnEvent("Click", (*) => CloseConfiguredPullBuilder())
 
@@ -373,6 +398,7 @@ OpenConfiguredHotkeyBuilder(*) {
         "hotkeyHintText", hotkeyHintText,
         "conflictText", conflictText,
         "helpText", helpText,
+        "statusText", statusText,
         "applyButton", applyButton,
         "cancelButton", cancelButton,
         "hotkeysButton", hotkeysButton,
@@ -1815,9 +1841,12 @@ ToggleSelectedAppHotkey(entry) {
             return
         }
 
+        global WindowWarpHotkeysEnabled
         config["hotkey"] := restoredHotkey
         config["disabledHotkey"] := ""
-        Hotkey(config["hotkey"], HandleConfiguredPullHotkeyDown.Bind(config))
+        if WindowWarpHotkeysEnabled {
+            Hotkey(config["hotkey"], HandleConfiguredPullHotkeyDown.Bind(config))
+        }
     } else {
         try Hotkey(currentHotkey, "Off")
         config["disabledHotkey"] := currentHotkey
@@ -1927,32 +1956,40 @@ GetDefaultSharedHotkey(id) {
 }
 
 ApplySharedHotkeyLiveState(sharedId, hotkey, enable) {
-    switch sharedId {
-        case "wm.move-left":
-            Hotkey(hotkey, enable ? "On" : "Off")
-        case "wm.move-right":
-            Hotkey(hotkey, enable ? "On" : "Off")
-        case "wm.move-left-center":
-            Hotkey(hotkey, enable ? "On" : "Off")
-        case "wm.move-right-center":
-            Hotkey(hotkey, enable ? "On" : "Off")
-        case "wm.open-builder":
-            Hotkey(hotkey, enable ? "On" : "Off")
-        case "wm.open-opener":
-            Hotkey(hotkey, enable ? "On" : "Off")
-        case "wm.update-workspace":
-            Hotkey(hotkey, enable ? "On" : "Off")
-        case "wm.pull-recent":
-            Hotkey(hotkey, enable ? "On" : "Off")
-        case "wm.toggle-suspend":
-            Hotkey(hotkey, enable ? "On" : "Off")
-        case "fullscreen.toggle":
-            Hotkey(hotkey, enable ? "On" : "Off")
-        case "kill.close-active":
-            Hotkey(hotkey, enable ? "On" : "Off")
-        default:
-            ReloadExternalSharedHotkeyScript(sharedId)
+    global WindowWarpHotkeysEnabled
+
+    if enable && !WindowWarpHotkeysEnabled && sharedId != "wm.toggle-suspend" {
+        enable := false
     }
+
+    static managedIds := Map(
+        "wm.move-left", true,
+        "wm.move-right", true,
+        "wm.move-left-center", true,
+        "wm.move-right-center", true,
+        "wm.open-builder", true,
+        "wm.open-opener", true,
+        "wm.update-workspace", true,
+        "wm.pull-recent", true,
+        "wm.toggle-suspend", true,
+        "fullscreen.toggle", true,
+        "kill.close-active", true
+    )
+
+    if managedIds.Has(sharedId) {
+        Hotkey(NormalizeHotkeyForDynamicRegistration(hotkey), enable ? "On" : "Off")
+        return
+    }
+
+    ReloadExternalSharedHotkeyScript(sharedId)
+}
+
+NormalizeHotkeyForDynamicRegistration(hotkey) {
+    if hotkey = "" {
+        return hotkey
+    }
+
+    return StrReplace(hotkey, ";", "`;")
 }
 
 ReloadExternalSharedHotkeyScript(sharedId) {
@@ -2338,13 +2375,98 @@ GetConfiguredAppLabel(config) {
     return "this app"
 }
 
+WindowWarpHotkeysAreEnabled() {
+    global WindowWarpHotkeysEnabled
+    return WindowWarpHotkeysEnabled
+}
+
+HandleMoveWindowDirectionHotkey(direction, centerMouse) {
+    if !WindowWarpHotkeysAreEnabled() {
+        return
+    }
+    MoveWindowDirection(direction, centerMouse)
+}
+
+HandleOpenConfiguredHotkeyBuilderHotkey() {
+    if !WindowWarpHotkeysAreEnabled() {
+        return
+    }
+    OpenConfiguredHotkeyBuilder()
+}
+
+HandleOpenWorkspaceOpenerHotkey() {
+    if !WindowWarpHotkeysAreEnabled() {
+        return
+    }
+    OpenWorkspaceOpenerBrowser()
+}
+
+HandleOpenWorkspaceUpdateHotkey() {
+    if !WindowWarpHotkeysAreEnabled() {
+        return
+    }
+    OpenWorkspaceUpdateDialog()
+}
+
+HandlePullMostRecentWindowHotkey() {
+    if !WindowWarpHotkeysAreEnabled() {
+        return
+    }
+    PullMostRecentWindow()
+}
+
+GetWindowWarpStatusLabel() {
+    global WindowWarpHotkeysEnabled
+    return WindowWarpHotkeysEnabled ? "[Enabled]" : "[Disabled]"
+}
+
+GetWindowWarpStatusColor(uiTheme, enabled) {
+    return enabled
+        ? (uiTheme["surface"] = "1E1F22" ? "86EFAC" : "166534")
+        : uiTheme["danger"]
+}
+
+UpdateWindowWarpEnabledStatusVisual() {
+    global ConfiguredPullBuilderState
+    global WindowWarpHotkeysEnabled
+
+    if !ConfiguredPullBuilderState.Count || !ConfiguredPullBuilderState.Has("statusText") || !ConfiguredPullBuilderState["statusText"] {
+        return
+    }
+
+    uiTheme := ConfiguredPullBuilderState["uiTheme"]
+    statusText := ConfiguredPullBuilderState["statusText"]
+    statusText.Text := GetWindowWarpStatusLabel()
+    try statusText.Opt("c" . GetWindowWarpStatusColor(uiTheme, WindowWarpHotkeysEnabled))
+}
+
+SetWindowWarpHotkeysEnabled(enabled) {
+    global WindowWarpHotkeysEnabled
+
+    Suspend(enabled ? 0 : 1)
+    WindowWarpHotkeysEnabled := enabled
+
+    if !enabled {
+        DisableRetileHotkeys()
+        ClearLastPushAction()
+    }
+
+    UpdateWindowWarpEnabledStatusVisual()
+}
+
 ToggleWindowManagerSuspend(*) {
-    Suspend(-1)
-    TrayTip("Window Manager", A_IsSuspended ? "Hotkeys disabled" : "Hotkeys enabled")
+    global WindowWarpHotkeysEnabled
+
+    SetWindowWarpHotkeysEnabled(!WindowWarpHotkeysEnabled)
+    TrayTip("Window Manager", WindowWarpHotkeysEnabled ? "Hotkeys enabled" : "Hotkeys disabled")
 }
 
 HandleConfiguredPullHotkeyDown(config, *) {
     global ConfiguredPullHotkeyState
+
+    if !WindowWarpHotkeysAreEnabled() {
+        return
+    }
 
     stateKey := GetConfiguredPullStateKey(config)
     if ConfiguredPullHotkeyState.Has(stateKey) {

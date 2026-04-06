@@ -9,6 +9,10 @@ if fullscreenHotkey != "" {
 }
 
 ToggleFullscreenWindow(*) {
+    if !Fullscreen_WindowWarpHotkeysAreEnabled() {
+        return
+    }
+
     hwnd := WinGetID("A")
     if !hwnd
         return
@@ -57,4 +61,12 @@ Fullscreen_GetSharedHotkey(id, fallback := "") {
     }
 
     return fallback
+}
+
+Fullscreen_WindowWarpHotkeysAreEnabled() {
+    try {
+        return WindowWarpHotkeysEnabled
+    } catch {
+        return true
+    }
 }
