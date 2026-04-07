@@ -5,10 +5,14 @@ global SharedHotkeyRegistryPath := A_ScriptDir "\hotkey_registry.ini"
 
 fullscreenHotkey := Fullscreen_GetSharedHotkey("fullscreen.toggle", "#z")
 if fullscreenHotkey != "" {
-    Hotkey(fullscreenHotkey, Func("ToggleFullscreenWindow"))
+    Hotkey(fullscreenHotkey, ToggleFullscreenWindow)
 }
 
 ToggleFullscreenWindow(*) {
+    if !Fullscreen_WindowWarpHotkeysAreEnabled() {
+        return
+    }
+
     hwnd := WinGetID("A")
     if !hwnd
         return
@@ -57,4 +61,12 @@ Fullscreen_GetSharedHotkey(id, fallback := "") {
     }
 
     return fallback
+}
+
+Fullscreen_WindowWarpHotkeysAreEnabled() {
+    try {
+        return WindowWarpHotkeysEnabled
+    } catch {
+        return true
+    }
 }
