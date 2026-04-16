@@ -30,14 +30,27 @@ LoadWorkspaceOpenerProfiles() {
             wslDistro := IniRead(WorkspaceOpenerConfigPath, itemSection, "wslDistro", "")
             profileName := IniRead(WorkspaceOpenerConfigPath, itemSection, "profileName", "")
             promptIdentity := IniRead(WorkspaceOpenerConfigPath, itemSection, "promptIdentity", "")
+            browserKind := IniRead(WorkspaceOpenerConfigPath, itemSection, "browserKind", "")
+            browserProfilePath := IniRead(WorkspaceOpenerConfigPath, itemSection, "browserProfilePath", "")
+            browserProfileName := IniRead(WorkspaceOpenerConfigPath, itemSection, "browserProfileName", "")
+            browserActiveTab := IniRead(WorkspaceOpenerConfigPath, itemSection, "browserActiveTab", "1") + 0
             x := IniRead(WorkspaceOpenerConfigPath, itemSection, "x", "")
             y := IniRead(WorkspaceOpenerConfigPath, itemSection, "y", "")
             w := IniRead(WorkspaceOpenerConfigPath, itemSection, "w", "")
             h := IniRead(WorkspaceOpenerConfigPath, itemSection, "h", "")
             state := IniRead(WorkspaceOpenerConfigPath, itemSection, "state", "0") + 0
             monitorIndex := IniRead(WorkspaceOpenerConfigPath, itemSection, "monitorIndex", "1") + 0
+            browserUrlCount := IniRead(WorkspaceOpenerConfigPath, itemSection, "browserUrlCount", "0") + 0
             if processName = "" || x = "" || y = "" || w = "" || h = "" {
                 continue
+            }
+
+            browserUrls := []
+            Loop browserUrlCount {
+                url := IniRead(WorkspaceOpenerConfigPath, itemSection, "browserUrl" . A_Index, "")
+                if url != "" {
+                    browserUrls.Push(url)
+                }
             }
 
             items.Push(Map(
@@ -50,6 +63,11 @@ LoadWorkspaceOpenerProfiles() {
                 "wslDistro", wslDistro,
                 "profileName", profileName,
                 "promptIdentity", promptIdentity,
+                "browserKind", browserKind,
+                "browserProfilePath", browserProfilePath,
+                "browserProfileName", browserProfileName,
+                "browserActiveTab", browserActiveTab,
+                "browserUrls", browserUrls,
                 "x", x + 0,
                 "y", y + 0,
                 "w", w + 0,
@@ -99,6 +117,15 @@ SaveWorkspaceOpenerProfiles(profiles) {
             IniWrite(item.Has("wslDistro") ? item["wslDistro"] : "", WorkspaceOpenerConfigPath, itemSection, "wslDistro")
             IniWrite(item.Has("profileName") ? item["profileName"] : "", WorkspaceOpenerConfigPath, itemSection, "profileName")
             IniWrite(item.Has("promptIdentity") ? item["promptIdentity"] : "", WorkspaceOpenerConfigPath, itemSection, "promptIdentity")
+            IniWrite(item.Has("browserKind") ? item["browserKind"] : "", WorkspaceOpenerConfigPath, itemSection, "browserKind")
+            IniWrite(item.Has("browserProfilePath") ? item["browserProfilePath"] : "", WorkspaceOpenerConfigPath, itemSection, "browserProfilePath")
+            IniWrite(item.Has("browserProfileName") ? item["browserProfileName"] : "", WorkspaceOpenerConfigPath, itemSection, "browserProfileName")
+            IniWrite(item.Has("browserActiveTab") ? item["browserActiveTab"] : 1, WorkspaceOpenerConfigPath, itemSection, "browserActiveTab")
+            browserUrls := item.Has("browserUrls") ? item["browserUrls"] : []
+            IniWrite(browserUrls.Length, WorkspaceOpenerConfigPath, itemSection, "browserUrlCount")
+            for urlIndex, browserUrl in browserUrls {
+                IniWrite(browserUrl, WorkspaceOpenerConfigPath, itemSection, "browserUrl" . urlIndex)
+            }
             IniWrite(item["x"], WorkspaceOpenerConfigPath, itemSection, "x")
             IniWrite(item["y"], WorkspaceOpenerConfigPath, itemSection, "y")
             IniWrite(item["w"], WorkspaceOpenerConfigPath, itemSection, "w")
@@ -128,6 +155,19 @@ MigrateWorkspaceOpenerItem(item, legacyTerminalCommand := "") {
             ApplyLegacyTerminalCommandToItem(item, legacyTerminalCommand)
         }
         NormalizeTerminalLaunchItem(item)
+    } else if processName = "firefox.exe" {
+        NormalizeFirefoxLaunchItem(item)
+    }
+}
+
+NormalizeFirefoxLaunchItem(item) {
+    item["launchKind"] := "firefox-window"
+    item["browserKind"] := "firefox"
+    if !item.Has("browserActiveTab") || item["browserActiveTab"] < 1 {
+        item["browserActiveTab"] := 1
+    }
+    if !item.Has("browserUrls") {
+        item["browserUrls"] := []
     }
 }
 
@@ -455,6 +495,13 @@ JoinTextParts(parts, separator := ", ") {
 }
 
 GetSanitizedWorkspaceOpenerLabel(item) {
+    if item.Has("launchKind") && item["launchKind"] = "windows-terminal" {
+        return GetWorkspaceOpenerTerminalLabel(item)
+    }
+    if item.Has("launchKind") && item["launchKind"] = "firefox-window" {
+        return GetWorkspaceOpenerBrowserLabel(item)
+    }
+
     label := item.Has("label") && item["label"] != "" ? item["label"] : item["processName"]
     processName := item.Has("processName") ? item["processName"] : label
     processLabel := RegExReplace(processName, "\.exe$", "")
@@ -718,6 +765,576 @@ ResolveWslDistroFromPrompt(title) {
     return ""
 }
 
+GetFirefoxWindowCaptureSpec(hwnd, windowTitle, profileInfo := 0) {
+    profiles := GetFirefoxProfiles()
+    if profiles.Length = 0 {
+        return 0
+    }
+
+    candidateProfiles := []
+    if profileInfo && profileInfo.Has("profilePath") && profileInfo["profilePath"] != "" {
+        for _, profile in profiles {
+            if StrLower(profile["path"]) = StrLower(profileInfo["profilePath"]) {
+                candidateProfiles.Push(profile)
+                break
+            }
+        }
+    }
+    if candidateProfiles.Length = 0 {
+        candidateProfiles := profiles
+    }
+
+    normalizedTitle := NormalizeFirefoxWindowTitle(windowTitle)
+    bestSpec := 0
+    bestScore := -1
+    for _, profile in candidateProfiles {
+        sessionWindows := GetFirefoxSessionWindowsForProfile(profile)
+        if sessionWindows.Length = 1 {
+            return sessionWindows[1]
+        }
+        for _, spec in sessionWindows {
+            score := ScoreFirefoxSessionWindow(normalizedTitle, spec)
+            if profileInfo && profileInfo.Has("profilePath") && profileInfo["profilePath"] != "" && spec.Has("profilePath") && StrLower(spec["profilePath"]) = StrLower(profileInfo["profilePath"]) {
+                score += 100
+            }
+            if profileInfo && profileInfo.Has("profileName") && profileInfo["profileName"] != "" && spec.Has("profileName") && StrLower(spec["profileName"]) = StrLower(profileInfo["profileName"]) {
+                score += 40
+            }
+            if score > bestScore {
+                bestScore := score
+                bestSpec := spec
+            }
+        }
+    }
+
+    if !bestSpec {
+        return 0
+    }
+    if bestScore < 20 && candidateProfiles.Length > 1 {
+        return 0
+    }
+
+    return bestSpec
+}
+
+GetFirefoxProfiles() {
+    profiles := []
+    baseDir := EnvGet("APPDATA") . "\Mozilla\Firefox"
+    profilesIni := baseDir . "\profiles.ini"
+    if FileExist(profilesIni) {
+        currentSection := ""
+        currentProfile := 0
+        for _, rawLine in StrSplit(FileRead(profilesIni), "`n", "`r") {
+            line := Trim(rawLine)
+            if line = "" || SubStr(line, 1, 1) = ";" {
+                continue
+            }
+            if RegExMatch(line, "^\[(.+)\]$", &match) {
+                if currentProfile {
+                    profiles.Push(currentProfile)
+                }
+                currentSection := match[1]
+                currentProfile := InStr(currentSection, "Profile") = 1 ? Map("name", "", "path", "", "isRelative", 1, "default", 0) : 0
+                continue
+            }
+            if !currentProfile || !InStr(line, "=") {
+                continue
+            }
+            parts := StrSplit(line, "=", , 2)
+            key := Trim(parts[1])
+            value := Trim(parts[2])
+            switch key {
+                case "Name":
+                    currentProfile["name"] := value
+                case "Path":
+                    currentProfile["path"] := value
+                case "IsRelative":
+                    currentProfile["isRelative"] := value + 0
+                case "Default":
+                    currentProfile["default"] := value + 0
+            }
+        }
+        if currentProfile {
+            profiles.Push(currentProfile)
+        }
+    }
+
+    resolvedProfiles := []
+    seenPaths := Map()
+    for _, profile in profiles {
+        if !profile.Has("path") || profile["path"] = "" {
+            continue
+        }
+        profilePath := profile["isRelative"] ? baseDir . "\" . profile["path"] : profile["path"]
+        if !DirExist(profilePath) {
+            continue
+        }
+        seenPaths[StrLower(profilePath)] := true
+        resolvedProfiles.Push(Map(
+            "name", profile["name"] != "" ? profile["name"] : profile["path"],
+            "path", profilePath,
+            "default", profile["default"]
+        ))
+    }
+
+    profilesDir := baseDir . "\Profiles"
+    if DirExist(profilesDir) {
+        Loop Files, profilesDir . "\*", "D" {
+            profilePath := A_LoopFileFullPath
+            if seenPaths.Has(StrLower(profilePath)) {
+                continue
+            }
+            resolvedProfiles.Push(Map(
+                "name", GetFirefoxProfileNameFromPath(profilePath),
+                "path", profilePath,
+                "default", 0
+            ))
+        }
+    }
+
+    return resolvedProfiles
+}
+
+GetFirefoxWindowProfileInfo(hwnd, windowTitle := "") {
+    profiles := GetFirefoxProfiles()
+    if profiles.Length = 0 {
+        return 0
+    }
+
+    profilePath := ""
+    profileName := ""
+    pid := 0
+    try pid := WinGetPID("ahk_id " hwnd)
+    if pid {
+        commandLine := GetProcessCommandLineByPid(pid)
+        if commandLine != "" && RegExMatch(commandLine, 'i)--profile\s+"([^"]+)"', &match) {
+            profilePath := match[1]
+        }
+    }
+
+    titleProfileName := GetFirefoxProfileNameFromWindowTitle(windowTitle)
+    if titleProfileName != "" {
+        profileName := titleProfileName
+    }
+
+    if profilePath != "" {
+        for _, profile in profiles {
+            if StrLower(profile["path"]) = StrLower(profilePath) {
+                if profileName = "" {
+                    profileName := profile["name"]
+                }
+                return Map("profilePath", profilePath, "profileName", profileName)
+            }
+        }
+        if profileName = "" {
+            profileName := GetFirefoxProfileNameFromPath(profilePath)
+        }
+        return Map("profilePath", profilePath, "profileName", profileName)
+    }
+
+    if profileName != "" {
+        for _, profile in profiles {
+            if StrLower(profile["name"]) = StrLower(profileName) {
+                return Map("profilePath", profile["path"], "profileName", profile["name"])
+            }
+        }
+    }
+
+    for _, profile in profiles {
+        if profile["default"] {
+            return Map("profilePath", profile["path"], "profileName", profile["name"])
+        }
+    }
+
+    return profiles.Length ? Map("profilePath", profiles[1]["path"], "profileName", profiles[1]["name"]) : 0
+}
+
+GetFirefoxProfileNameFromPath(profilePath) {
+    SplitPath(profilePath, &dirName)
+    if dirName = "" {
+        return ""
+    }
+    if InStr(dirName, ".") {
+        parts := StrSplit(dirName, ".", , 2)
+        return parts[2]
+    }
+    return dirName
+}
+
+GetFirefoxProfileNameFromWindowTitle(windowTitle) {
+    windowTitle := Trim(windowTitle)
+    if windowTitle = "" || !RegExMatch(windowTitle, "[–—-]\s+Mozilla Firefox$") {
+        return ""
+    }
+
+    candidates := []
+    for _, separator in [" — ", " – ", " - "] {
+        pieces := StrSplit(windowTitle, separator)
+        if pieces.Length >= 2 {
+            candidates.Push(Trim(pieces[pieces.Length - 1]))
+        }
+    }
+
+    if candidates.Length = 0 {
+        return ""
+    }
+
+    profiles := GetFirefoxProfiles()
+    for _, candidate in candidates {
+        for _, profile in profiles {
+            if StrLower(candidate) = StrLower(profile["name"]) {
+                return profile["name"]
+            }
+        }
+    }
+
+    return ""
+}
+
+GetFirefoxSessionWindowsForProfile(profile) {
+    jsonText := ReadFirefoxSessionJson(profile["path"])
+    if jsonText = "" {
+        return []
+    }
+
+    session := ParseJsonText(jsonText)
+    if !session {
+        return []
+    }
+
+    sessionWindows := []
+    try rawWindows := session.windows
+    catch
+        return sessionWindows
+
+    windowCount := GetComArrayLength(rawWindows)
+    Loop windowCount {
+        rawWindow := rawWindows[A_Index - 1]
+        spec := BuildFirefoxSessionWindowSpec(rawWindow, profile)
+        if spec {
+            sessionWindows.Push(spec)
+        }
+    }
+
+    return sessionWindows
+}
+
+GetFirefoxProfileUrlsFallback(profilePath) {
+    jsonText := ReadFirefoxSessionJson(profilePath)
+    if jsonText = "" {
+        return []
+    }
+
+    urls := []
+    seen := Map()
+    startPos := 1
+    pattern := '"url":"((?:\\.|[^"])*)"'
+    while RegExMatch(jsonText, pattern, &match, startPos) {
+        startPos := match.Pos + match.Len
+        url := UnescapeFirefoxJsonString(match[1])
+        if url = "" {
+            continue
+        }
+        lowerUrl := StrLower(url)
+        if InStr(lowerUrl, "about:") = 1 || InStr(lowerUrl, "chrome:") = 1 || InStr(lowerUrl, "moz-extension:") = 1 {
+            continue
+        }
+        if !seen.Has(lowerUrl) {
+            seen[lowerUrl] := true
+            urls.Push(url)
+        }
+    }
+
+    return urls
+}
+
+ReadFirefoxSessionJson(profilePath) {
+    candidates := [
+        profilePath . "\sessionstore-backups\recovery.jsonlz4",
+        profilePath . "\sessionstore-backups\recovery.baklz4",
+        profilePath . "\sessionstore.jsonlz4"
+    ]
+
+    for _, candidate in candidates {
+        if !FileExist(candidate) {
+            continue
+        }
+        jsonText := ReadMozillaJsonLz4File(candidate)
+        if jsonText != "" {
+            return jsonText
+        }
+    }
+
+    return ""
+}
+
+ReadMozillaJsonLz4File(path) {
+    file := ""
+    try file := FileOpen(path, "r")
+    catch
+        return ""
+    if !file {
+        return ""
+    }
+
+    size := file.Length
+    if size <= 8 {
+        file.Close()
+        return ""
+    }
+
+    compressed := Buffer(size, 0)
+    file.RawRead(compressed, size)
+    file.Close()
+
+    magic := ""
+    Loop 8 {
+        magic .= Chr(NumGet(compressed, A_Index - 1, "UChar"))
+    }
+    if magic != "mozLz40`0" {
+        return ""
+    }
+
+    return DecompressMozLz4ToUtf8(compressed, 8)
+}
+
+DecompressMozLz4ToUtf8(src, startOffset := 8) {
+    srcSize := src.Size
+    srcPos := startOffset
+    capacity := Max(65536, (srcSize - startOffset) * 12)
+    output := Buffer(capacity, 0)
+    outPos := 0
+
+    while srcPos < srcSize {
+        token := NumGet(src, srcPos, "UChar")
+        srcPos += 1
+
+        literalLength := token >> 4
+        if literalLength = 15 {
+            while srcPos < srcSize {
+                extension := NumGet(src, srcPos, "UChar")
+                srcPos += 1
+                literalLength += extension
+                if extension != 255 {
+                    break
+                }
+            }
+        }
+
+        if literalLength > 0 {
+            EnsureMozLz4OutputCapacity(&output, &capacity, outPos + literalLength + 1024)
+            DllCall("RtlMoveMemory", "ptr", output.Ptr + outPos, "ptr", src.Ptr + srcPos, "uptr", literalLength)
+            srcPos += literalLength
+            outPos += literalLength
+        }
+
+        if srcPos >= srcSize {
+            break
+        }
+
+        offset := NumGet(src, srcPos, "UShort")
+        srcPos += 2
+        if offset <= 0 || offset > outPos {
+            return ""
+        }
+
+        matchLength := token & 0x0F
+        if matchLength = 15 {
+            while srcPos < srcSize {
+                extension := NumGet(src, srcPos, "UChar")
+                srcPos += 1
+                matchLength += extension
+                if extension != 255 {
+                    break
+                }
+            }
+        }
+        matchLength += 4
+
+        EnsureMozLz4OutputCapacity(&output, &capacity, outPos + matchLength + 1024)
+        matchPos := outPos - offset
+        Loop matchLength {
+            NumPut("UChar", NumGet(output, matchPos + A_Index - 1, "UChar"), output, outPos + A_Index - 1)
+        }
+        outPos += matchLength
+    }
+
+    return StrGet(output, outPos, "UTF-8")
+}
+
+EnsureMozLz4OutputCapacity(&buffer, &capacity, required) {
+    if required <= capacity {
+        return
+    }
+
+    newCapacity := capacity
+    while newCapacity < required {
+        newCapacity := Max(newCapacity * 2, required)
+    }
+
+    newBuffer := Buffer(newCapacity, 0)
+    DllCall("RtlMoveMemory", "ptr", newBuffer.Ptr, "ptr", buffer.Ptr, "uptr", capacity)
+    buffer := newBuffer
+    capacity := newCapacity
+}
+
+ParseJsonText(jsonText) {
+    static htmlDocument := 0
+
+    if jsonText = "" {
+        return 0
+    }
+    if !htmlDocument {
+        htmlDocument := ComObject("htmlfile")
+        htmlDocument.write("<meta http-equiv='X-UA-Compatible' content='IE=9'>")
+    }
+
+    try {
+        return htmlDocument.parentWindow.JSON.parse(jsonText)
+    } catch {
+        return 0
+    }
+}
+
+UnescapeFirefoxJsonString(value) {
+    value := StrReplace(value, "\\", "\")
+    value := StrReplace(value, "\/", "/")
+    value := StrReplace(value, '\"', '"')
+    value := StrReplace(value, "\u003A", ":")
+    value := StrReplace(value, "\u002F", "/")
+    value := StrReplace(value, "\u0026", "&")
+    return value
+}
+
+BuildFirefoxSessionWindowSpec(rawWindow, profile) {
+    try rawTabs := rawWindow.tabs
+    catch
+        return 0
+
+    tabs := []
+    rawTabCount := GetComArrayLength(rawTabs)
+    if rawTabCount <= 0 {
+        return 0
+    }
+
+    Loop rawTabCount {
+        rawTab := rawTabs[A_Index - 1]
+        currentEntry := GetFirefoxCurrentTabEntry(rawTab)
+        if !currentEntry {
+            continue
+        }
+        url := currentEntry["url"]
+        if url = "" {
+            continue
+        }
+        tabs.Push(Map(
+            "url", url,
+            "title", currentEntry.Has("title") ? currentEntry["title"] : ""
+        ))
+    }
+
+    if tabs.Length = 0 {
+        return 0
+    }
+
+    selectedIndex := 1
+    try selectedIndex := rawWindow.selected + 0
+    if selectedIndex < 1 || selectedIndex > tabs.Length {
+        selectedIndex := 1
+    }
+
+    activeTab := tabs[selectedIndex]
+    urls := []
+    for _, tab in tabs {
+        urls.Push(tab["url"])
+    }
+
+    return Map(
+        "profilePath", profile["path"],
+        "profileName", profile["name"],
+        "urls", urls,
+        "activeTab", selectedIndex,
+        "activeTitle", activeTab.Has("title") ? activeTab["title"] : "",
+        "activeUrl", activeTab["url"],
+        "label", "Firefox"
+    )
+}
+
+GetFirefoxCurrentTabEntry(rawTab) {
+    try entries := rawTab.entries
+    catch
+        return 0
+
+    entryCount := GetComArrayLength(entries)
+    if entryCount <= 0 {
+        return 0
+    }
+
+    index := 1
+    try index := rawTab.index + 0
+    if index < 1 || index > entryCount {
+        index := entryCount
+    }
+
+    entry := entries[index - 1]
+    url := ""
+    title := ""
+    try url := entry.url
+    try title := entry.title
+    if url = "" {
+        return 0
+    }
+
+    return Map(
+        "url", url,
+        "title", title
+    )
+}
+
+ScoreFirefoxSessionWindow(normalizedLiveTitle, spec) {
+    score := 0
+    activeTitle := NormalizeFirefoxWindowTitle(spec.Has("activeTitle") ? spec["activeTitle"] : "")
+    activeUrl := spec.Has("activeUrl") ? spec["activeUrl"] : ""
+
+    if activeTitle != "" && activeTitle = normalizedLiveTitle {
+        score += 120
+    } else if activeTitle != "" && (InStr(activeTitle, normalizedLiveTitle) || InStr(normalizedLiveTitle, activeTitle)) {
+        score += 80
+    }
+
+    if normalizedLiveTitle != "" {
+        for _, url in spec["urls"] {
+            if InStr(StrLower(url), normalizedLiveTitle) {
+                score += 20
+                break
+            }
+        }
+    }
+
+    if activeUrl != "" {
+        score += 5
+    }
+    if spec.Has("profileName") && spec["profileName"] != "" {
+        score += 2
+    }
+
+    return score
+}
+
+NormalizeFirefoxWindowTitle(title) {
+    title := Trim(title)
+    title := RegExReplace(title, "\s+[-–—]\s+Mozilla Firefox$")
+    title := RegExReplace(title, "\s+[-–—]\s+Firefox Developer Edition$")
+    title := RegExReplace(title, "\s+[-–—]\s+Nightly$")
+    return StrLower(Trim(title))
+}
+
+GetComArrayLength(value) {
+    try return value.length + 0
+    catch
+        return 0
+}
+
 GetWslPromptIdentity(title) {
     title := Trim(title)
     if !RegExMatch(title, "^([^@]+)@([^:]+):", &match) {
@@ -815,6 +1432,14 @@ GetProcessSnapshot() {
     return processes
 }
 
+GetProcessCommandLineByPid(pid) {
+    processes := GetProcessSnapshot()
+    if processes.Has(pid) {
+        return processes[pid]["commandLine"]
+    }
+    return ""
+}
+
 GetDescendantProcesses(processes, rootPid) {
     descendants := []
     queue := [rootPid]
@@ -894,7 +1519,7 @@ UpdateWorkspaceOpenerPagination() {
 RefreshWorkspaceOpenerBrowser(pageIndex := 0) {
     global ConfiguredPullBuilderState
 
-    if !ConfiguredPullBuilderState.Count || !ConfiguredPullBuilderState["openerGui"] {
+    if !ConfiguredPullBuilderState.Count || !ConfiguredPullBuilderState.Has("openerGui") || !ConfiguredPullBuilderState["openerGui"] {
         return
     }
 
@@ -1114,7 +1739,8 @@ CaptureWorkspaceWindowItem(hwnd) {
         "monitorIndex", placement["monitorIndex"]
     )
 
-    if StrLower(processName) = "windowsterminal.exe" {
+    loweredProcessName := StrLower(processName)
+    if loweredProcessName = "windowsterminal.exe" {
         shellSpec := GetWindowsTerminalShellSpec(hwnd)
         if !shellSpec {
             shellSpec := InferWindowsTerminalShellSpec(title)
@@ -1135,6 +1761,31 @@ CaptureWorkspaceWindowItem(hwnd) {
             }
         }
         item["label"] := GetWorkspaceOpenerTerminalLabel(item)
+    } else if loweredProcessName = "firefox.exe" {
+        profileInfo := GetFirefoxWindowProfileInfo(hwnd, title)
+        browserSpec := GetFirefoxWindowCaptureSpec(hwnd, title, profileInfo)
+        item["launchKind"] := "firefox-window"
+        item["browserKind"] := "firefox"
+        if profileInfo {
+            item["browserProfilePath"] := profileInfo["profilePath"]
+            item["browserProfileName"] := profileInfo["profileName"]
+        }
+        if browserSpec {
+            if !item.Has("browserProfilePath") || item["browserProfilePath"] = "" {
+                item["browserProfilePath"] := browserSpec["profilePath"]
+            }
+            if !item.Has("browserProfileName") || item["browserProfileName"] = "" {
+                item["browserProfileName"] := browserSpec["profileName"]
+            }
+            item["browserActiveTab"] := browserSpec["activeTab"]
+            item["browserUrls"] := browserSpec["urls"]
+            item["title"] := browserSpec["activeTitle"] != "" ? browserSpec["activeTitle"] : item["title"]
+            item["label"] := browserSpec["label"]
+        } else {
+            item["browserActiveTab"] := 1
+            item["browserUrls"] := profileInfo && profileInfo.Has("profilePath") ? GetFirefoxProfileUrlsFallback(profileInfo["profilePath"]) : []
+            item["label"] := "Firefox"
+        }
     } else if path != "" && IsPackagedAppPath(path) {
         item["launchKind"] := "packaged-app"
     } else if path != "" {
@@ -1225,6 +1876,14 @@ GetWorkspaceOpenerTerminalLabel(item) {
     return "Windows Terminal"
 }
 
+GetWorkspaceOpenerBrowserLabel(item) {
+    browserKind := item.Has("browserKind") ? StrLower(item["browserKind"]) : ""
+    if browserKind = "firefox" {
+        return "Firefox"
+    }
+    return item.Has("label") ? item["label"] : "Browser"
+}
+
 GetWorkspaceOpenerPlacementLabel(item) {
     monitor := GetMonitorByIndex(item["monitorIndex"])
     if !monitor {
@@ -1302,6 +1961,11 @@ LaunchWorkspaceOpenerItem(item) {
         existingTerminalWindows := GetVisibleWindowsForProcess(item["processName"])
         if LaunchWindowsTerminalItem(item) {
             hwnd := WaitForWorkspaceItemWindow(item, 8000, existingTerminalWindows)
+        }
+    } else if item.Has("launchKind") && item["launchKind"] = "firefox-window" {
+        existingFirefoxWindows := GetVisibleWindowsForProcess(item["processName"])
+        if LaunchFirefoxWorkspaceItem(item) {
+            hwnd := WaitForWorkspaceItemWindow(item, 12000, existingFirefoxWindows)
         }
     } else {
         hwnd := FindWorkspaceWindowForItem(item)
@@ -1393,6 +2057,78 @@ GetWindowsTerminalLaunchSpec(item) {
     }
 
     return ""
+}
+
+LaunchFirefoxWorkspaceItem(item) {
+    firefoxPath := item.Has("path") ? Trim(item["path"]) : ""
+    profilePath := item.Has("browserProfilePath") ? Trim(item["browserProfilePath"]) : ""
+    profileName := item.Has("browserProfileName") ? Trim(item["browserProfileName"]) : ""
+    urls := item.Has("browserUrls") ? item["browserUrls"] : []
+    activeTab := item.Has("browserActiveTab") ? item["browserActiveTab"] : 1
+
+    if firefoxPath = "" || !FileExist(firefoxPath) {
+        return false
+    }
+    if profilePath = "" || !DirExist(profilePath) {
+        if profileName != "" {
+            orderedUrls := GetFirefoxLaunchUrlOrder(urls, activeTab)
+            launchUrl := orderedUrls.Length ? orderedUrls[1] : "about:blank"
+            try {
+                Run('"' . firefoxPath . '" -P "' . profileName . '" -no-remote -new-window "' . launchUrl . '"')
+                if orderedUrls.Length > 1 {
+                    Sleep(700)
+                    Loop orderedUrls.Length - 1 {
+                        nextUrl := orderedUrls[A_Index + 1]
+                        try Run('"' . firefoxPath . '" -P "' . profileName . '" -no-remote -new-tab "' . nextUrl . '"')
+                        Sleep(120)
+                    }
+                }
+                return true
+            } catch {
+            }
+        }
+        try {
+            Run('"' . firefoxPath . '"')
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    orderedUrls := GetFirefoxLaunchUrlOrder(urls, activeTab)
+    launchUrl := orderedUrls.Length ? orderedUrls[1] : "about:blank"
+    try {
+        Run('"' . firefoxPath . '" -profile "' . profilePath . '" -no-remote -new-window "' . launchUrl . '"')
+    } catch {
+        return false
+    }
+
+    if orderedUrls.Length > 1 {
+        Sleep(700)
+        Loop orderedUrls.Length - 1 {
+            nextUrl := orderedUrls[A_Index + 1]
+            try Run('"' . firefoxPath . '" -profile "' . profilePath . '" -no-remote -new-tab "' . nextUrl . '"')
+            Sleep(120)
+        }
+    }
+
+    return true
+}
+
+GetFirefoxLaunchUrlOrder(urls, activeTab) {
+    ordered := []
+    if urls.Length = 0 {
+        return ordered
+    }
+
+    activeTab := Max(1, Min(activeTab, urls.Length))
+    Loop urls.Length {
+        if A_Index != activeTab {
+            ordered.Push(urls[A_Index])
+        }
+    }
+    ordered.Push(urls[activeTab])
+    return ordered
 }
 
 IsAllowedWorkspaceAppPath(path) {
