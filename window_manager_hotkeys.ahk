@@ -2332,10 +2332,9 @@ GetActiveConfiguredWindowInfo() {
         return 0
     }
 
-    title := WinGetTitle("ahk_id " hwnd)
     return Map(
         "match", "ahk_exe " . processName,
-        "label", title != "" ? title : RegExReplace(processName, "\.exe$", "")
+        "label", StrLower(RegExReplace(processName, "\.exe$", ""))
     )
 }
 

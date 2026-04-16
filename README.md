@@ -49,3 +49,8 @@ The replacement for Alt+Tab that you've been looking for. Switch to apps immedia
 - App hotkeys are stored in `window_manager_apps.ini`.
 - Shared hotkeys are stored in `hotkey_registry.ini`.
 - Workspace opener profiles are stored locally in `workspace_openers.ini`.
+
+## Future Ideas
+
+- Add a hold-mode selector in Settings so hold behavior can switch between the current mouse-aware tiling flow and a radial app picker for multi-instance apps.
+- Explore a consistent dock/radial layout so app positions stay stable between opens, with room for paging or grouped slots when an app has multiple instances.
