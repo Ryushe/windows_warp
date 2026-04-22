@@ -2,12 +2,31 @@ RegisterConfiguredPullHotkeys() {
     global ConfiguredPullHotkeys
 
     for _, config in ConfiguredPullHotkeys {
-        if !(config.Has("hotkey") && config.Has("match")) {
-            continue
-        }
-
-        Hotkey(config["hotkey"], HandleConfiguredPullHotkeyDown.Bind(config))
+        RegisterConfiguredPullHotkey(config)
     }
+}
+
+RegisterConfiguredPullHotkey(config, enable := true) {
+    if !(config.Has("hotkey") && config.Has("match")) || config["hotkey"] = "" {
+        return
+    }
+
+    if enable {
+        Hotkey(NormalizeHotkeyForDynamicRegistration(config["hotkey"]), HandleConfiguredPullHotkeyDown.Bind(config))
+    } else {
+        try Hotkey(NormalizeHotkeyForDynamicRegistration(config["hotkey"]), "Off")
+    }
+
+    for _, passThroughHotkey in GetConfiguredPullSystemPassThroughHotkeys(config["hotkey"]) {
+        if enable {
+            try Hotkey(NormalizeHotkeyForDynamicRegistration(passThroughHotkey), AllowModifiedSystemHotkey, "On")
+        } else {
+            try Hotkey(NormalizeHotkeyForDynamicRegistration(passThroughHotkey), "Off")
+        }
+    }
+}
+
+AllowModifiedSystemHotkey(*) {
 }
 
 RegisterRetileHotkeys() {
@@ -1820,7 +1839,7 @@ DeleteSelectedAppHotkey(entry) {
         return
     }
 
-    try Hotkey(entry["config"]["hotkey"], "Off")
+    RegisterConfiguredPullHotkey(entry["config"], false)
     ConfiguredPullHotkeys.RemoveAt(deleteIndex)
     SaveConfiguredPullHotkeys(ConfiguredPullHotkeys)
 
@@ -1854,10 +1873,10 @@ ToggleSelectedAppHotkey(entry) {
         config["hotkey"] := restoredHotkey
         config["disabledHotkey"] := ""
         if WindowWarpHotkeysEnabled {
-            Hotkey(config["hotkey"], HandleConfiguredPullHotkeyDown.Bind(config))
+            RegisterConfiguredPullHotkey(config)
         }
     } else {
-        try Hotkey(currentHotkey, "Off")
+        RegisterConfiguredPullHotkey(config, false)
         config["disabledHotkey"] := currentHotkey
         config["hotkey"] := ""
     }
@@ -1945,7 +1964,7 @@ ResolveHotkeyEnableConflict(hotkey, enablingKind, currentMatch := "", currentSha
             return false
         }
 
-        try Hotkey(ConfiguredPullHotkeys[appConflictIndex]["hotkey"], "Off")
+        RegisterConfiguredPullHotkey(ConfiguredPullHotkeys[appConflictIndex], false)
         ConfiguredPullHotkeys[appConflictIndex]["disabledHotkey"] := ConfiguredPullHotkeys[appConflictIndex]["hotkey"]
         ConfiguredPullHotkeys[appConflictIndex]["hotkey"] := ""
         SaveConfiguredPullHotkeys(ConfiguredPullHotkeys)
@@ -1999,6 +2018,111 @@ NormalizeHotkeyForDynamicRegistration(hotkey) {
     }
 
     return StrReplace(hotkey, ";", "`;")
+}
+
+GetConfiguredPullSystemPassThroughHotkeys(hotkey) {
+    normalized := NormalizeSimpleHotkeyForComparison(hotkey)
+    if normalized = "" {
+        return []
+    }
+
+    parsed := ParseSimpleHotkey(normalized)
+    if !parsed || !InStr(parsed["modifiers"], "#") || InStr(parsed["modifiers"], "^") {
+        return []
+    }
+
+    ctrlVariant := BuildSimpleHotkey(parsed["modifiers"] . "^", parsed["key"])
+    if ctrlVariant = "" || IsHotkeyAssigned(ctrlVariant) {
+        return []
+    }
+
+    return ["~" . ctrlVariant]
+}
+
+IsHotkeyAssigned(hotkey) {
+    global ConfiguredPullHotkeys
+    global SharedHotkeyRegistry
+
+    target := NormalizeSimpleHotkeyForComparison(hotkey)
+    if target = "" {
+        return true
+    }
+
+    for _, entry in SharedHotkeyRegistry {
+        if entry.Has("hotkey") && NormalizeSimpleHotkeyForComparison(entry["hotkey"]) = target {
+            return true
+        }
+    }
+
+    for _, config in ConfiguredPullHotkeys {
+        if config.Has("hotkey") && NormalizeSimpleHotkeyForComparison(config["hotkey"]) = target {
+            return true
+        }
+    }
+
+    return false
+}
+
+NormalizeSimpleHotkeyForComparison(hotkey) {
+    parsed := ParseSimpleHotkey(hotkey)
+    if !parsed {
+        return ""
+    }
+
+    return BuildSimpleHotkey(parsed["modifiers"], parsed["key"])
+}
+
+ParseSimpleHotkey(hotkey) {
+    hotkey := Trim(hotkey)
+    if hotkey = "" || InStr(hotkey, "&") {
+        return 0
+    }
+
+    while hotkey != "" {
+        prefix := SubStr(hotkey, 1, 1)
+        if InStr("*~$", prefix) {
+            hotkey := SubStr(hotkey, 2)
+            continue
+        }
+
+        break
+    }
+
+    if InStr(hotkey, "<") || InStr(hotkey, ">") {
+        return 0
+    }
+
+    modifiers := ""
+    while hotkey != "" {
+        prefix := SubStr(hotkey, 1, 1)
+        if InStr("#^!+", prefix) {
+            if !InStr(modifiers, prefix) {
+                modifiers .= prefix
+            }
+            hotkey := SubStr(hotkey, 2)
+            continue
+        }
+
+        break
+    }
+
+    hotkey := Trim(hotkey)
+    if hotkey = "" {
+        return 0
+    }
+
+    return Map("modifiers", modifiers, "key", hotkey)
+}
+
+BuildSimpleHotkey(modifiers, key) {
+    orderedModifiers := ""
+    for _, modifier in ["#", "^", "!", "+"] {
+        if InStr(modifiers, modifier) {
+            orderedModifiers .= modifier
+        }
+    }
+
+    return orderedModifiers . key
 }
 
 ReloadExternalSharedHotkeyScript(sharedId) {
