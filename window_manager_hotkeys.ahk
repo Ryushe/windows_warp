@@ -2,12 +2,36 @@ RegisterConfiguredPullHotkeys() {
     global ConfiguredPullHotkeys
 
     for _, config in ConfiguredPullHotkeys {
-        if !(config.Has("hotkey") && config.Has("match")) {
-            continue
-        }
-
-        Hotkey(config["hotkey"], HandleConfiguredPullHotkeyDown.Bind(config))
+        RegisterConfiguredPullHotkey(config)
     }
+}
+
+RegisterConfiguredPullHotkey(config, enable := true) {
+    if !(config.Has("hotkey") && config.Has("match")) || config["hotkey"] = "" {
+        return
+    }
+
+    normalizedHotkey := NormalizeHotkeyForDynamicRegistration(config["hotkey"])
+    releaseHotkey := normalizedHotkey . " Up"
+
+    if enable {
+        Hotkey(normalizedHotkey, HandleConfiguredPullHotkeyDown.Bind(config))
+        Hotkey(releaseHotkey, HandleConfiguredPullHotkeyUp.Bind(config))
+    } else {
+        try Hotkey(normalizedHotkey, "Off")
+        try Hotkey(releaseHotkey, "Off")
+    }
+
+    for _, passThroughHotkey in GetConfiguredPullSystemPassThroughHotkeys(config["hotkey"]) {
+        if enable {
+            try Hotkey(NormalizeHotkeyForDynamicRegistration(passThroughHotkey), AllowModifiedSystemHotkey, "On")
+        } else {
+            try Hotkey(NormalizeHotkeyForDynamicRegistration(passThroughHotkey), "Off")
+        }
+    }
+}
+
+AllowModifiedSystemHotkey(*) {
 }
 
 RegisterRetileHotkeys() {
@@ -229,7 +253,8 @@ LoadWindowWarpSettings() {
 
     settings := Map(
         "holdDelayMs", 400,
-        "holdTileEnabled", true
+        "holdTileEnabled", true,
+        "holdMode", "tile"
     )
 
     if !FileExist(WindowWarpSettingsPath) {
@@ -239,9 +264,11 @@ LoadWindowWarpSettings() {
 
     holdDelayMs := IniRead(WindowWarpSettingsPath, "Settings", "holdDelayMs", "400") + 0
     holdTileEnabled := IniRead(WindowWarpSettingsPath, "Settings", "holdTileEnabled", "1") + 0
+    holdMode := IniRead(WindowWarpSettingsPath, "Settings", "holdMode", "tile")
 
     settings["holdDelayMs"] := SanitizeWindowWarpHoldDelay(holdDelayMs)
     settings["holdTileEnabled"] := holdTileEnabled != 0
+    settings["holdMode"] := SanitizeWindowWarpHoldMode(holdMode)
     return settings
 }
 
@@ -250,6 +277,7 @@ SaveWindowWarpSettings(settings) {
 
     IniWrite(settings["holdDelayMs"], WindowWarpSettingsPath, "Settings", "holdDelayMs")
     IniWrite(settings["holdTileEnabled"] ? 1 : 0, WindowWarpSettingsPath, "Settings", "holdTileEnabled")
+    IniWrite(settings["holdMode"], WindowWarpSettingsPath, "Settings", "holdMode")
 }
 
 SanitizeWindowWarpHoldDelay(delayMs) {
@@ -260,6 +288,11 @@ SanitizeWindowWarpHoldDelay(delayMs) {
         return 5000
     }
     return delayMs
+}
+
+SanitizeWindowWarpHoldMode(mode) {
+    mode := StrLower(Trim(mode))
+    return mode = "radial" ? "radial" : "tile"
 }
 
 GetStartupShortcutPath() {
@@ -1811,7 +1844,7 @@ DeleteSelectedAppHotkey(entry) {
         return
     }
 
-    try Hotkey(entry["config"]["hotkey"], "Off")
+    RegisterConfiguredPullHotkey(entry["config"], false)
     ConfiguredPullHotkeys.RemoveAt(deleteIndex)
     SaveConfiguredPullHotkeys(ConfiguredPullHotkeys)
 
@@ -1845,10 +1878,10 @@ ToggleSelectedAppHotkey(entry) {
         config["hotkey"] := restoredHotkey
         config["disabledHotkey"] := ""
         if WindowWarpHotkeysEnabled {
-            Hotkey(config["hotkey"], HandleConfiguredPullHotkeyDown.Bind(config))
+            RegisterConfiguredPullHotkey(config)
         }
     } else {
-        try Hotkey(currentHotkey, "Off")
+        RegisterConfiguredPullHotkey(config, false)
         config["disabledHotkey"] := currentHotkey
         config["hotkey"] := ""
     }
@@ -1936,7 +1969,7 @@ ResolveHotkeyEnableConflict(hotkey, enablingKind, currentMatch := "", currentSha
             return false
         }
 
-        try Hotkey(ConfiguredPullHotkeys[appConflictIndex]["hotkey"], "Off")
+        RegisterConfiguredPullHotkey(ConfiguredPullHotkeys[appConflictIndex], false)
         ConfiguredPullHotkeys[appConflictIndex]["disabledHotkey"] := ConfiguredPullHotkeys[appConflictIndex]["hotkey"]
         ConfiguredPullHotkeys[appConflictIndex]["hotkey"] := ""
         SaveConfiguredPullHotkeys(ConfiguredPullHotkeys)
@@ -1990,6 +2023,111 @@ NormalizeHotkeyForDynamicRegistration(hotkey) {
     }
 
     return StrReplace(hotkey, ";", "`;")
+}
+
+GetConfiguredPullSystemPassThroughHotkeys(hotkey) {
+    normalized := NormalizeSimpleHotkeyForComparison(hotkey)
+    if normalized = "" {
+        return []
+    }
+
+    parsed := ParseSimpleHotkey(normalized)
+    if !parsed || !InStr(parsed["modifiers"], "#") || InStr(parsed["modifiers"], "^") {
+        return []
+    }
+
+    ctrlVariant := BuildSimpleHotkey(parsed["modifiers"] . "^", parsed["key"])
+    if ctrlVariant = "" || IsHotkeyAssigned(ctrlVariant) {
+        return []
+    }
+
+    return ["~" . ctrlVariant]
+}
+
+IsHotkeyAssigned(hotkey) {
+    global ConfiguredPullHotkeys
+    global SharedHotkeyRegistry
+
+    target := NormalizeSimpleHotkeyForComparison(hotkey)
+    if target = "" {
+        return true
+    }
+
+    for _, entry in SharedHotkeyRegistry {
+        if entry.Has("hotkey") && NormalizeSimpleHotkeyForComparison(entry["hotkey"]) = target {
+            return true
+        }
+    }
+
+    for _, config in ConfiguredPullHotkeys {
+        if config.Has("hotkey") && NormalizeSimpleHotkeyForComparison(config["hotkey"]) = target {
+            return true
+        }
+    }
+
+    return false
+}
+
+NormalizeSimpleHotkeyForComparison(hotkey) {
+    parsed := ParseSimpleHotkey(hotkey)
+    if !parsed {
+        return ""
+    }
+
+    return BuildSimpleHotkey(parsed["modifiers"], parsed["key"])
+}
+
+ParseSimpleHotkey(hotkey) {
+    hotkey := Trim(hotkey)
+    if hotkey = "" || InStr(hotkey, "&") {
+        return 0
+    }
+
+    while hotkey != "" {
+        prefix := SubStr(hotkey, 1, 1)
+        if InStr("*~$", prefix) {
+            hotkey := SubStr(hotkey, 2)
+            continue
+        }
+
+        break
+    }
+
+    if InStr(hotkey, "<") || InStr(hotkey, ">") {
+        return 0
+    }
+
+    modifiers := ""
+    while hotkey != "" {
+        prefix := SubStr(hotkey, 1, 1)
+        if InStr("#^!+", prefix) {
+            if !InStr(modifiers, prefix) {
+                modifiers .= prefix
+            }
+            hotkey := SubStr(hotkey, 2)
+            continue
+        }
+
+        break
+    }
+
+    hotkey := Trim(hotkey)
+    if hotkey = "" {
+        return 0
+    }
+
+    return Map("modifiers", modifiers, "key", hotkey)
+}
+
+BuildSimpleHotkey(modifiers, key) {
+    orderedModifiers := ""
+    for _, modifier in ["#", "^", "!", "+"] {
+        if InStr(modifiers, modifier) {
+            orderedModifiers .= modifier
+        }
+    }
+
+    return orderedModifiers . key
 }
 
 ReloadExternalSharedHotkeyScript(sharedId) {
@@ -2473,15 +2611,9 @@ HandleConfiguredPullHotkeyDown(config, *) {
     }
 
     MouseGetPos(&mouseX, &mouseY)
-    keyName := GetConfiguredPullPrimaryKey(config["hotkey"])
-    if !keyName {
-        return
-    }
-
     ConfiguredPullHotkeyState[stateKey] := Map(
         "mouseX", mouseX,
         "mouseY", mouseY,
-        "keyName", keyName,
         "startTick", A_TickCount,
         "holdTriggered", false,
         "timer", ""
@@ -2492,10 +2624,31 @@ HandleConfiguredPullHotkeyDown(config, *) {
     SetTimer(timer, 25)
 }
 
+HandleConfiguredPullHotkeyUp(config, *) {
+    global ConfiguredPullHotkeyState
+
+    stateKey := GetConfiguredPullStateKey(config)
+    if !ConfiguredPullHotkeyState.Has(stateKey) {
+        return
+    }
+
+    state := ConfiguredPullHotkeyState[stateKey]
+    SetTimer(state["timer"], 0)
+
+    if state["holdTriggered"] && state.Has("holdAction") && state["holdAction"] = "radial" {
+        FinalizeConfiguredPullRadialSelection(config)
+    } else if !state["holdTriggered"] {
+        PullConfiguredWindow(config)
+    }
+
+    ConfiguredPullHotkeyState.Delete(stateKey)
+}
+
 MonitorConfiguredPullHotkey(stateKey, config) {
     global ConfiguredPullHotkeyState
     global ConfiguredPullHoldDelayMs
     global ConfiguredPullHoldTileEnabled
+    global ConfiguredPullHoldMode
 
     if !ConfiguredPullHotkeyState.Has(stateKey) {
         return
@@ -2503,17 +2656,10 @@ MonitorConfiguredPullHotkey(stateKey, config) {
 
     state := ConfiguredPullHotkeyState[stateKey]
 
-    if !GetKeyState(state["keyName"], "P") {
-        SetTimer(state["timer"], 0)
-        ConfiguredPullHotkeyState.Delete(stateKey)
-
-        if !state["holdTriggered"] {
-            PullConfiguredWindow(config)
-        }
-        return
-    }
-
     if state["holdTriggered"] {
+        if state.Has("holdAction") && state["holdAction"] = "radial" {
+            UpdateConfiguredPullRadialSelection()
+        }
         return
     }
 
@@ -2525,37 +2671,313 @@ MonitorConfiguredPullHotkey(stateKey, config) {
         return
     }
 
+    holdMode := SanitizeWindowWarpHoldMode(ConfiguredPullHoldMode)
     state["holdTriggered"] := true
+    state["holdAction"] := holdMode
+    ConfiguredPullHotkeyState[stateKey] := state
+
+    if holdMode = "radial" && ShowConfiguredPullRadialMenu(config, state["mouseX"], state["mouseY"]) {
+        UpdateConfiguredPullRadialSelection()
+        return
+    }
+
+    state["holdAction"] := "tile"
     ConfiguredPullHotkeyState[stateKey] := state
     PullConfiguredWindow(config, true, state["mouseX"], state["mouseY"])
 }
 
-GetConfiguredPullStateKey(config) {
-    return config.Has("hotkey") ? config["hotkey"] : config["match"]
+ShowConfiguredPullRadialMenu(config, mouseX, mouseY) {
+    global ConfiguredPullRadialState
+
+    candidates := GetConfiguredWindowCandidates(config)
+    if candidates.Length = 0 {
+        CloseConfiguredPullRadialMenu()
+        return false
+    }
+
+    CloseConfiguredPullRadialMenu()
+
+    uiTheme := GetUiTheme()
+    slotCount := Min(candidates.Length, 8)
+    ringRadius := slotCount <= 4 ? 64 : 84
+    slotWidth := 104
+    slotHeight := 42
+    guiSize := 260
+    centerOffset := Floor(guiSize / 2)
+
+    workArea := GetWorkAreaForPoint(mouseX, mouseY)
+    minX := workArea["left"]
+    maxX := workArea["right"] - guiSize
+    minY := workArea["top"]
+    maxY := workArea["bottom"] - guiSize
+    showX := Clamp(mouseX - centerOffset, minX, Max(minX, maxX))
+    showY := Clamp(mouseY - centerOffset, minY, Max(minY, maxY))
+
+    radialGui := Gui("-Caption +ToolWindow +AlwaysOnTop +Border", "Hold Menu")
+    radialGui.MarginX := 0
+    radialGui.MarginY := 0
+    radialGui.BackColor := uiTheme["surface"]
+    radialGui.SetFont("s9", "Segoe UI")
+    radialGui.OnEvent("Close", (*) => CloseConfiguredPullRadialMenu())
+    radialGui.OnEvent("Escape", (*) => CloseConfiguredPullRadialMenu())
+
+    radialGui.AddText(Format("x0 y0 w{} h{} Background{}", guiSize, guiSize, uiTheme["surface"]), "")
+
+    slotControls := []
+    Loop slotCount {
+        index := A_Index
+        angleDeg := -90 + ((index - 1) * (360 / slotCount))
+        angleRad := angleDeg * 0.0174532925199433
+        slotX := Round(centerOffset + (ringRadius * Cos(angleRad)) - (slotWidth / 2))
+        slotY := Round(centerOffset + (ringRadius * Sin(angleRad)) - (slotHeight / 2))
+        fill := radialGui.AddText(Format("x{} y{} w{} h{} Center Background{} c{}", slotX, slotY, slotWidth, slotHeight, uiTheme["sharedFill"], uiTheme["text"]), "")
+        fill.Opt("+Border")
+        text := radialGui.AddText(Format("x{} y{} w{} h{} Center c{} BackgroundTrans", slotX + 8, slotY + 6, slotWidth - 16, slotHeight - 12, uiTheme["text"]), GetConfiguredWindowCandidateDisplayLabel(candidates[index], index))
+        slotControls.Push(Map(
+            "fill", fill,
+            "text", text
+        ))
+    }
+
+    radialGui.Show(Format("NA x{} y{} w{} h{}", showX, showY, guiSize, guiSize))
+
+    ConfiguredPullRadialState := Map(
+        "gui", radialGui,
+        "guiHwnd", radialGui.Hwnd,
+        "candidates", candidates,
+        "slotControls", slotControls,
+        "slotCount", slotCount,
+        "selectedIndex", 0,
+        "showX", showX,
+        "showY", showY,
+        "size", guiSize,
+        "centerX", showX + centerOffset,
+        "centerY", showY + centerOffset,
+        "deadzoneRadius", 10,
+        "uiTheme", uiTheme,
+        "config", config
+    )
+
+    return true
 }
 
-GetConfiguredPullPrimaryKey(hotkey) {
-    hotkey := Trim(hotkey)
-    if !hotkey {
-        return ""
+CloseConfiguredPullRadialMenu() {
+    global ConfiguredPullRadialState
+
+    if ConfiguredPullRadialState.Count && ConfiguredPullRadialState.Has("gui") && ConfiguredPullRadialState["gui"] {
+        try ConfiguredPullRadialState["gui"].Destroy()
     }
 
-    if InStr(hotkey, "&") {
-        parts := StrSplit(hotkey, "&")
-        return Trim(parts[parts.Length])
+    ConfiguredPullRadialState := Map()
+}
+
+UpdateConfiguredPullRadialSelection() {
+    global ConfiguredPullRadialState
+
+    if !ConfiguredPullRadialState.Count {
+        return
     }
 
-    while hotkey != "" {
-        prefix := SubStr(hotkey, 1, 1)
-        if InStr("*~$<>#^!+", prefix) {
-            hotkey := SubStr(hotkey, 2)
+    MouseGetPos(&mouseX, &mouseY)
+    dx := mouseX - ConfiguredPullRadialState["centerX"]
+    dy := mouseY - ConfiguredPullRadialState["centerY"]
+    distance := Sqrt((dx * dx) + (dy * dy))
+    selectedIndex := 0
+
+    if distance >= ConfiguredPullRadialState["deadzoneRadius"] {
+        step := 360 / ConfiguredPullRadialState["slotCount"]
+        angle := GetConfiguredPullRadialAngle(dx, dy)
+        selectedIndex := Floor(Mod(angle + (step / 2), 360) / step) + 1
+    }
+
+    if selectedIndex = ConfiguredPullRadialState["selectedIndex"] {
+        return
+    }
+
+    ConfiguredPullRadialState["selectedIndex"] := selectedIndex
+    ApplyConfiguredPullRadialSelectionStyles()
+}
+
+ApplyConfiguredPullRadialSelectionStyles() {
+    global ConfiguredPullRadialState
+
+    if !ConfiguredPullRadialState.Count {
+        return
+    }
+
+    uiTheme := ConfiguredPullRadialState["uiTheme"]
+    selectedIndex := ConfiguredPullRadialState["selectedIndex"]
+    slotControls := ConfiguredPullRadialState["slotControls"]
+
+    for index, controls in slotControls {
+        isSelected := index = selectedIndex
+        fillColor := isSelected ? uiTheme["appBorder"] : uiTheme["sharedFill"]
+        textColor := isSelected ? uiTheme["title"] : uiTheme["text"]
+        controls["fill"].Opt("+Background" . fillColor)
+        controls["text"].Opt("c" . textColor)
+    }
+}
+
+FinalizeConfiguredPullRadialSelection(config) {
+    global ConfiguredPullRadialState
+
+    if !ConfiguredPullRadialState.Count {
+        return
+    }
+
+    selectedIndex := ConfiguredPullRadialState["selectedIndex"]
+    candidates := ConfiguredPullRadialState["candidates"]
+    CloseConfiguredPullRadialMenu()
+
+    if selectedIndex < 1 || selectedIndex > candidates.Length {
+        return
+    }
+
+    hwnd := candidates[selectedIndex]["hwnd"]
+    if !WinExist("ahk_id " hwnd) {
+        return
+    }
+
+    if WinGetMinMax("ahk_id " hwnd) = -1 {
+        WinRestore("ahk_id " hwnd)
+    }
+
+    if !WinActive("ahk_id " hwnd) {
+        StoreConfiguredPreviousWindow(config, WinExist("A"), hwnd)
+    }
+
+    WinActivate("ahk_id " hwnd)
+}
+
+GetConfiguredWindowCandidates(config) {
+    candidates := []
+    hwnds := FindConfiguredWindows(config["match"])
+    appLabel := GetConfiguredAppLabel(config)
+
+    for _, hwnd in hwnds {
+        if !WinExist("ahk_id " hwnd) {
             continue
         }
 
-        break
+        try title := Trim(WinGetTitle("ahk_id " hwnd))
+        catch
+            title := ""
+
+        baseLabel := title != "" ? title : appLabel
+
+        candidates.Push(Map(
+            "hwnd", hwnd,
+            "title", title,
+            "label", baseLabel,
+            "sortKey", StrLower(baseLabel),
+            "displayLabel", ""
+        ))
     }
 
-    return Trim(hotkey)
+    SortConfiguredWindowCandidates(&candidates)
+
+    titleCounts := Map()
+    for _, candidate in candidates {
+        label := candidate["label"]
+        if titleCounts.Has(label) {
+            titleCounts[label] := titleCounts[label] + 1
+            candidate["displayLabel"] := label . " (" . titleCounts[label] . ")"
+        } else {
+            titleCounts[label] := 1
+            candidate["displayLabel"] := label
+        }
+    }
+
+    while candidates.Length > 8 {
+        candidates.Pop()
+    }
+
+    return candidates
+}
+
+GetConfiguredWindowCandidateDisplayLabel(candidate, index) {
+    label := TrimConfiguredPullRadialText(candidate["displayLabel"], 30)
+    return index . ". " . label
+}
+
+SortConfiguredWindowCandidates(&candidates) {
+    if candidates.Length < 2 {
+        return
+    }
+
+    Loop candidates.Length - 1 {
+        outerIndex := A_Index
+        Loop candidates.Length - outerIndex {
+            leftIndex := A_Index
+            rightIndex := leftIndex + 1
+            leftCandidate := candidates[leftIndex]
+            rightCandidate := candidates[rightIndex]
+            if CompareConfiguredWindowCandidates(leftCandidate, rightCandidate) > 0 {
+                candidates[leftIndex] := rightCandidate
+                candidates[rightIndex] := leftCandidate
+            }
+        }
+    }
+}
+
+CompareConfiguredWindowCandidates(leftCandidate, rightCandidate) {
+    leftKey := leftCandidate["sortKey"]
+    rightKey := rightCandidate["sortKey"]
+    keyComparison := StrCompare(leftKey, rightKey, false)
+    if keyComparison != 0 {
+        return keyComparison
+    }
+
+    leftHwnd := leftCandidate["hwnd"] + 0
+    rightHwnd := rightCandidate["hwnd"] + 0
+    if leftHwnd < rightHwnd {
+        return -1
+    }
+    if leftHwnd > rightHwnd {
+        return 1
+    }
+
+    return 0
+}
+
+TrimConfiguredPullRadialText(text, maxLength) {
+    text := Trim(RegExReplace(text, "\s+", " "))
+    if StrLen(text) <= maxLength {
+        return text
+    }
+
+    return RTrim(SubStr(text, 1, maxLength - 1)) . Chr(0x2026)
+}
+
+GetConfiguredPullRadialAngle(dx, dy) {
+    angle := DllCall("msvcrt\atan2", "double", dy, "double", dx, "CDECL double")
+    return Mod((angle * 57.29577951308232) + 450, 360)
+}
+
+GetWorkAreaForPoint(x, y) {
+    monitors := GetOrderedMonitors()
+    for _, monitor in monitors {
+        if x >= monitor["workLeft"] && x <= monitor["workRight"] && y >= monitor["workTop"] && y <= monitor["workBottom"] {
+            return Map(
+                "left", monitor["workLeft"],
+                "top", monitor["workTop"],
+                "right", monitor["workRight"],
+                "bottom", monitor["workBottom"]
+            )
+        }
+    }
+
+    primary := GetMonitorByIndex(MonitorGetPrimary())
+    return Map(
+        "left", primary["workLeft"],
+        "top", primary["workTop"],
+        "right", primary["workRight"],
+        "bottom", primary["workBottom"]
+    )
+}
+
+GetConfiguredPullStateKey(config) {
+    return config.Has("hotkey") ? config["hotkey"] : config["match"]
 }
 
 PullConfiguredWindow(config, tileOnPullToMain := false, mouseX := "", mouseY := "", *) {
@@ -2707,40 +3129,51 @@ OpenWindowWarpSettings() {
     closeButton.OnEvent("Click", (*) => CloseWindowWarpSettings())
 
     settingsGui.SetFont("s9", "Segoe UI")
-    settingsGui.AddText("x18 y58 w396 h34 c" . uiTheme["muted"], "Configure hold-to-tile behavior and whether Windows Warp starts with Windows.")
+    settingsGui.AddText("x18 y58 w396 h34 c" . uiTheme["muted"], "Choose what hold does, tune the delay, and decide whether Windows Warp starts with Windows.")
 
     holdTileCheckbox := settingsGui.AddCheckBox("x18 y106 w18 h18", "")
     holdTileCheckbox.Value := WindowWarpSettings["holdTileEnabled"] ? 1 : 0
-    holdTileLabel := settingsGui.AddText("x46 y106 w280 c" . uiTheme["text"], "Enable hold to tile")
+    holdTileLabel := settingsGui.AddText("x46 y106 w280 c" . uiTheme["text"], "Enable hold action")
     holdTileLabel.OnEvent("Click", (*) => ToggleSettingsCheckbox("holdTileCheckbox"))
 
-    settingsGui.AddText("x18 y144 w220 c" . uiTheme["text"], "Hold delay (milliseconds)")
-    holdDelayEdit := settingsGui.AddEdit("x18 y168 w120 h26 Number")
+    settingsGui.AddText("x18 y144 w220 c" . uiTheme["text"], "Hold action")
+    tileModeRadio := settingsGui.AddRadio(Format("x18 y168 w160 h22 c{}", uiTheme["text"]), "Tile under mouse")
+    radialModeRadio := settingsGui.AddRadio(Format("x18 y194 w220 h22 c{}", uiTheme["text"]), "Radial app picker")
+    if WindowWarpSettings["holdMode"] = "radial" {
+        radialModeRadio.Value := 1
+    } else {
+        tileModeRadio.Value := 1
+    }
+
+    settingsGui.AddText("x18 y234 w220 c" . uiTheme["text"], "Hold delay (milliseconds)")
+    holdDelayEdit := settingsGui.AddEdit("x18 y258 w120 h26 Number")
     holdDelayEdit.Value := WindowWarpSettings["holdDelayMs"]
 
-    startupCheckbox := settingsGui.AddCheckBox("x18 y214 w18 h18", "")
+    startupCheckbox := settingsGui.AddCheckBox("x18 y304 w18 h18", "")
     startupCheckbox.Value := IsWindowsWarpStartupEnabled() ? 1 : 0
-    startupLabel := settingsGui.AddText("x46 y214 w280 c" . uiTheme["text"], "Start Windows Warp with Windows")
+    startupLabel := settingsGui.AddText("x46 y304 w280 c" . uiTheme["text"], "Start Windows Warp with Windows")
     startupLabel.OnEvent("Click", (*) => ToggleSettingsCheckbox("startupCheckbox"))
 
-    applyButton := settingsGui.AddButton("x18 y266 w96 h30 Default", "Apply")
-    cancelButton := settingsGui.AddButton("x126 y266 w96 h30", "Cancel")
+    applyButton := settingsGui.AddButton("x18 y352 w96 h30 Default", "Apply")
+    cancelButton := settingsGui.AddButton("x126 y352 w96 h30", "Cancel")
     applyButton.OnEvent("Click", (*) => SaveWindowWarpSettingsFromGui())
     cancelButton.OnEvent("Click", (*) => CloseWindowWarpSettings())
 
     ConfiguredPullBuilderState["settingsGui"] := settingsGui
     ConfiguredPullBuilderState["settingsGuiHwnd"] := settingsGui.Hwnd
     ConfiguredPullBuilderState["settingsHoldTileCheckbox"] := holdTileCheckbox
+    ConfiguredPullBuilderState["settingsHoldModeTileRadio"] := tileModeRadio
+    ConfiguredPullBuilderState["settingsHoldModeRadialRadio"] := radialModeRadio
     ConfiguredPullBuilderState["settingsHoldDelayEdit"] := holdDelayEdit
     ConfiguredPullBuilderState["settingsStartupCheckbox"] := startupCheckbox
 
     if ownerHwnd {
         WinGetPos(&ownerX, &ownerY, &ownerW, &ownerH, "ahk_id " ownerHwnd)
         settingsX := ownerX + Floor((ownerW - 452) / 2)
-        settingsY := ownerY + Floor((ownerH - 320) / 2)
-        settingsGui.Show(Format("x{} y{} w452 h320", settingsX, settingsY))
+        settingsY := ownerY + Floor((ownerH - 406) / 2)
+        settingsGui.Show(Format("x{} y{} w452 h406", settingsX, settingsY))
     } else {
-        settingsGui.Show("w452 h320 Center")
+        settingsGui.Show("w452 h406 Center")
     }
 
     holdTileCheckbox.Focus()
@@ -2762,6 +3195,7 @@ SaveWindowWarpSettingsFromGui() {
     global WindowWarpSettings
     global ConfiguredPullHoldDelayMs
     global ConfiguredPullHoldTileEnabled
+    global ConfiguredPullHoldMode
 
     if !ConfiguredPullBuilderState.Count || !ConfiguredPullBuilderState.Has("settingsGui") {
         return
@@ -2775,13 +3209,15 @@ SaveWindowWarpSettingsFromGui() {
 
     settings := Map(
         "holdDelayMs", SanitizeWindowWarpHoldDelay(holdDelayValue + 0),
-        "holdTileEnabled", ConfiguredPullBuilderState["settingsHoldTileCheckbox"].Value = 1
+        "holdTileEnabled", ConfiguredPullBuilderState["settingsHoldTileCheckbox"].Value = 1,
+        "holdMode", ConfiguredPullBuilderState["settingsHoldModeRadialRadio"].Value = 1 ? "radial" : "tile"
     )
 
     SaveWindowWarpSettings(settings)
     WindowWarpSettings := settings
     ConfiguredPullHoldDelayMs := settings["holdDelayMs"]
     ConfiguredPullHoldTileEnabled := settings["holdTileEnabled"]
+    ConfiguredPullHoldMode := settings["holdMode"]
 
     try {
         SetWindowsWarpStartupEnabled(ConfiguredPullBuilderState["settingsStartupCheckbox"].Value = 1)

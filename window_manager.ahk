@@ -12,6 +12,8 @@ global WindowWarpSettingsPath := A_ScriptDir "\windows_warp_settings.ini"
 global WindowWarpSettings := LoadWindowWarpSettings()
 global ConfiguredPullHoldDelayMs := WindowWarpSettings["holdDelayMs"]
 global ConfiguredPullHoldTileEnabled := WindowWarpSettings["holdTileEnabled"]
+global ConfiguredPullHoldMode := WindowWarpSettings["holdMode"]
+global ConfiguredPullRadialState := Map()
 global BurnerMonitorIndex := 2
 global ConfiguredPullConfigPath := A_ScriptDir "\window_manager_apps.ini"
 global SharedHotkeyRegistryPath := A_ScriptDir "\hotkey_registry.ini"
@@ -323,14 +325,24 @@ FindConfiguredWindow(match) {
         return WinExist("A")
     }
 
-    hwnds := WinGetList(match)
+    hwnds := FindConfiguredWindows(match)
     for _, hwnd in hwnds {
-        if WinExist("ahk_id " hwnd) {
-            return hwnd
-        }
+        return hwnd
     }
 
     return 0
+}
+
+FindConfiguredWindows(match) {
+    hwnds := WinGetList(match)
+    windows := []
+    for _, hwnd in hwnds {
+        if WinExist("ahk_id " hwnd) {
+            windows.Push(hwnd)
+        }
+    }
+
+    return windows
 }
 
 RestoreWindowPlacement(hwnd, placement) {
