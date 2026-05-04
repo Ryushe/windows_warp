@@ -11,10 +11,15 @@ RegisterConfiguredPullHotkey(config, enable := true) {
         return
     }
 
+    normalizedHotkey := NormalizeHotkeyForDynamicRegistration(config["hotkey"])
+    releaseHotkey := normalizedHotkey . " Up"
+
     if enable {
-        Hotkey(NormalizeHotkeyForDynamicRegistration(config["hotkey"]), HandleConfiguredPullHotkeyDown.Bind(config))
+        Hotkey(normalizedHotkey, HandleConfiguredPullHotkeyDown.Bind(config))
+        Hotkey(releaseHotkey, HandleConfiguredPullHotkeyUp.Bind(config))
     } else {
-        try Hotkey(NormalizeHotkeyForDynamicRegistration(config["hotkey"]), "Off")
+        try Hotkey(normalizedHotkey, "Off")
+        try Hotkey(releaseHotkey, "Off")
     }
 
     for _, passThroughHotkey in GetConfiguredPullSystemPassThroughHotkeys(config["hotkey"]) {
@@ -2606,15 +2611,9 @@ HandleConfiguredPullHotkeyDown(config, *) {
     }
 
     MouseGetPos(&mouseX, &mouseY)
-    keyName := GetConfiguredPullPrimaryKey(config["hotkey"])
-    if !keyName {
-        return
-    }
-
     ConfiguredPullHotkeyState[stateKey] := Map(
         "mouseX", mouseX,
         "mouseY", mouseY,
-        "keyName", keyName,
         "startTick", A_TickCount,
         "holdTriggered", false,
         "timer", ""
@@ -2623,6 +2622,26 @@ HandleConfiguredPullHotkeyDown(config, *) {
     timer := MonitorConfiguredPullHotkey.Bind(stateKey, config)
     ConfiguredPullHotkeyState[stateKey]["timer"] := timer
     SetTimer(timer, 25)
+}
+
+HandleConfiguredPullHotkeyUp(config, *) {
+    global ConfiguredPullHotkeyState
+
+    stateKey := GetConfiguredPullStateKey(config)
+    if !ConfiguredPullHotkeyState.Has(stateKey) {
+        return
+    }
+
+    state := ConfiguredPullHotkeyState[stateKey]
+    SetTimer(state["timer"], 0)
+
+    if state["holdTriggered"] && state.Has("holdAction") && state["holdAction"] = "radial" {
+        FinalizeConfiguredPullRadialSelection(config)
+    } else if !state["holdTriggered"] {
+        PullConfiguredWindow(config)
+    }
+
+    ConfiguredPullHotkeyState.Delete(stateKey)
 }
 
 MonitorConfiguredPullHotkey(stateKey, config) {
@@ -2636,17 +2655,6 @@ MonitorConfiguredPullHotkey(stateKey, config) {
     }
 
     state := ConfiguredPullHotkeyState[stateKey]
-
-    if !GetKeyState(state["keyName"], "P") {
-        SetTimer(state["timer"], 0)
-        if state["holdTriggered"] && state.Has("holdAction") && state["holdAction"] = "radial" {
-            FinalizeConfiguredPullRadialSelection(config)
-        } else if !state["holdTriggered"] {
-            PullConfiguredWindow(config)
-        }
-        ConfiguredPullHotkeyState.Delete(stateKey)
-        return
-    }
 
     if state["holdTriggered"] {
         if state.Has("holdAction") && state["holdAction"] = "radial" {
@@ -2970,30 +2978,6 @@ GetWorkAreaForPoint(x, y) {
 
 GetConfiguredPullStateKey(config) {
     return config.Has("hotkey") ? config["hotkey"] : config["match"]
-}
-
-GetConfiguredPullPrimaryKey(hotkey) {
-    hotkey := Trim(hotkey)
-    if !hotkey {
-        return ""
-    }
-
-    if InStr(hotkey, "&") {
-        parts := StrSplit(hotkey, "&")
-        return Trim(parts[parts.Length])
-    }
-
-    while hotkey != "" {
-        prefix := SubStr(hotkey, 1, 1)
-        if InStr("*~$<>#^!+", prefix) {
-            hotkey := SubStr(hotkey, 2)
-            continue
-        }
-
-        break
-    }
-
-    return Trim(hotkey)
 }
 
 PullConfiguredWindow(config, tileOnPullToMain := false, mouseX := "", mouseY := "", *) {
