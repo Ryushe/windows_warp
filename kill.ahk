@@ -8,6 +8,10 @@ if killHotkey != "" {
 }
 
 CloseActiveWindow(*) {
+    if !Kill_ExactHotkeyModifiersMatch(A_ThisHotkey) {
+        return
+    }
+
     if !Kill_WindowWarpHotkeysAreEnabled() {
         return
     }
@@ -45,4 +49,60 @@ Kill_WindowWarpHotkeysAreEnabled() {
     } catch {
         return true
     }
+}
+
+Kill_ExactHotkeyModifiersMatch(hotkey) {
+    modifiers := ""
+    hotkey := Trim(hotkey)
+
+    while hotkey != "" {
+        prefix := SubStr(hotkey, 1, 1)
+        if InStr("*~$", prefix) {
+            hotkey := SubStr(hotkey, 2)
+            continue
+        }
+        if InStr("#^!+", prefix) {
+            if !InStr(modifiers, prefix) {
+                modifiers .= prefix
+            }
+            hotkey := SubStr(hotkey, 2)
+            continue
+        }
+        break
+    }
+
+    hasWin := InStr(modifiers, "#") > 0
+    hasCtrl := InStr(modifiers, "^") > 0
+    hasAlt := InStr(modifiers, "!") > 0
+    hasShift := InStr(modifiers, "+") > 0
+
+    if Kill_IsModifierPressed("#") != hasWin {
+        return false
+    }
+    if Kill_IsModifierPressed("^") != hasCtrl {
+        return false
+    }
+    if Kill_IsModifierPressed("!") != hasAlt {
+        return false
+    }
+    if Kill_IsModifierPressed("+") != hasShift {
+        return false
+    }
+
+    return true
+}
+
+Kill_IsModifierPressed(modifierToken) {
+    switch modifierToken {
+        case "#":
+            return GetKeyState("LWin", "P") || GetKeyState("RWin", "P")
+        case "^":
+            return GetKeyState("Ctrl", "P")
+        case "!":
+            return GetKeyState("Alt", "P")
+        case "+":
+            return GetKeyState("Shift", "P")
+    }
+
+    return false
 }

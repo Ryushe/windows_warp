@@ -2068,6 +2068,49 @@ IsHotkeyAssigned(hotkey) {
     return false
 }
 
+ExactHotkeyModifiersMatch(hotkey) {
+    parsed := ParseSimpleHotkey(hotkey)
+    if !parsed {
+        return true
+    }
+
+    requiredModifiers := parsed["modifiers"]
+    hasWin := InStr(requiredModifiers, "#") > 0
+    hasCtrl := InStr(requiredModifiers, "^") > 0
+    hasAlt := InStr(requiredModifiers, "!") > 0
+    hasShift := InStr(requiredModifiers, "+") > 0
+
+    if IsHotkeyModifierPressed("#") != hasWin {
+        return false
+    }
+    if IsHotkeyModifierPressed("^") != hasCtrl {
+        return false
+    }
+    if IsHotkeyModifierPressed("!") != hasAlt {
+        return false
+    }
+    if IsHotkeyModifierPressed("+") != hasShift {
+        return false
+    }
+
+    return true
+}
+
+IsHotkeyModifierPressed(modifierToken) {
+    switch modifierToken {
+        case "#":
+            return GetKeyState("LWin", "P") || GetKeyState("RWin", "P")
+        case "^":
+            return GetKeyState("Ctrl", "P")
+        case "!":
+            return GetKeyState("Alt", "P")
+        case "+":
+            return GetKeyState("Shift", "P")
+    }
+
+    return false
+}
+
 NormalizeSimpleHotkeyForComparison(hotkey) {
     parsed := ParseSimpleHotkey(hotkey)
     if !parsed {
@@ -2518,6 +2561,9 @@ WindowWarpHotkeysAreEnabled() {
 }
 
 HandleMoveWindowDirectionHotkey(direction, centerMouse) {
+    if !ExactHotkeyModifiersMatch(A_ThisHotkey) {
+        return
+    }
     if !WindowWarpHotkeysAreEnabled() {
         return
     }
@@ -2525,6 +2571,9 @@ HandleMoveWindowDirectionHotkey(direction, centerMouse) {
 }
 
 HandleOpenConfiguredHotkeyBuilderHotkey() {
+    if !ExactHotkeyModifiersMatch(A_ThisHotkey) {
+        return
+    }
     if !WindowWarpHotkeysAreEnabled() {
         return
     }
@@ -2532,6 +2581,9 @@ HandleOpenConfiguredHotkeyBuilderHotkey() {
 }
 
 HandleOpenWorkspaceOpenerHotkey() {
+    if !ExactHotkeyModifiersMatch(A_ThisHotkey) {
+        return
+    }
     if !WindowWarpHotkeysAreEnabled() {
         return
     }
@@ -2539,6 +2591,9 @@ HandleOpenWorkspaceOpenerHotkey() {
 }
 
 HandleOpenWorkspaceUpdateHotkey() {
+    if !ExactHotkeyModifiersMatch(A_ThisHotkey) {
+        return
+    }
     if !WindowWarpHotkeysAreEnabled() {
         return
     }
@@ -2546,6 +2601,9 @@ HandleOpenWorkspaceUpdateHotkey() {
 }
 
 HandlePullMostRecentWindowHotkey() {
+    if !ExactHotkeyModifiersMatch(A_ThisHotkey) {
+        return
+    }
     if !WindowWarpHotkeysAreEnabled() {
         return
     }
@@ -2594,6 +2652,10 @@ SetWindowWarpHotkeysEnabled(enabled) {
 ToggleWindowManagerSuspend(*) {
     global WindowWarpHotkeysEnabled
 
+    if !ExactHotkeyModifiersMatch(A_ThisHotkey) {
+        return
+    }
+
     SetWindowWarpHotkeysEnabled(!WindowWarpHotkeysEnabled)
     TrayTip("Window Manager", WindowWarpHotkeysEnabled ? "Hotkeys enabled" : "Hotkeys disabled")
 }
@@ -2602,6 +2664,10 @@ HandleConfiguredPullHotkeyDown(config, *) {
     global ConfiguredPullHotkeyState
 
     if !WindowWarpHotkeysAreEnabled() {
+        return
+    }
+
+    if !ExactHotkeyModifiersMatch(config["hotkey"]) {
         return
     }
 

@@ -48,10 +48,16 @@ OnMessage(0x20A, HandleWindowManagerMouseWheel)
 
 
 HandleRetileLeft(*) {
+    if !ExactHotkeyModifiersMatch(A_ThisHotkey) {
+        return
+    }
     HandleRetileHotkey("left")
 }
 
 HandleRetileRight(*) {
+    if !ExactHotkeyModifiersMatch(A_ThisHotkey) {
+        return
+    }
     HandleRetileHotkey("right")
 }
 
