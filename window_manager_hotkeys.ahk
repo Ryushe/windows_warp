@@ -2074,6 +2074,10 @@ ExactHotkeyModifiersMatch(hotkey) {
         return true
     }
 
+    if HotkeyMatchesTriggeredHotkey(hotkey) {
+        return true
+    }
+
     requiredModifiers := parsed["modifiers"]
     hasWin := InStr(requiredModifiers, "#") > 0
     hasCtrl := InStr(requiredModifiers, "^") > 0
@@ -2094,6 +2098,16 @@ ExactHotkeyModifiersMatch(hotkey) {
     }
 
     return true
+}
+
+HotkeyMatchesTriggeredHotkey(hotkey) {
+    triggeredHotkey := A_ThisHotkey
+    if triggeredHotkey = "" {
+        return false
+    }
+
+    triggeredHotkey := RegExReplace(triggeredHotkey, "\s+Up$")
+    return NormalizeSimpleHotkeyForComparison(triggeredHotkey) = NormalizeSimpleHotkeyForComparison(hotkey)
 }
 
 IsHotkeyModifierPressed(modifierToken) {
@@ -2668,6 +2682,10 @@ HandleConfiguredPullHotkeyDown(config, *) {
     }
 
     if !ExactHotkeyModifiersMatch(config["hotkey"]) {
+        fallbackConfig := FindSyntheticCtrlFallbackConfiguredPullConfig(config)
+        if fallbackConfig {
+            HandleConfiguredPullHotkeyDown(fallbackConfig)
+        }
         return
     }
 
@@ -2695,6 +2713,10 @@ HandleConfiguredPullHotkeyUp(config, *) {
 
     stateKey := GetConfiguredPullStateKey(config)
     if !ConfiguredPullHotkeyState.Has(stateKey) {
+        fallbackConfig := FindSyntheticCtrlFallbackConfiguredPullConfig(config)
+        if fallbackConfig {
+            HandleConfiguredPullHotkeyUp(fallbackConfig)
+        }
         return
     }
 
@@ -2708,6 +2730,40 @@ HandleConfiguredPullHotkeyUp(config, *) {
     }
 
     ConfiguredPullHotkeyState.Delete(stateKey)
+}
+
+FindSyntheticCtrlFallbackConfiguredPullConfig(config) {
+    global ConfiguredPullHotkeys
+
+    if !(config.Has("hotkey")) {
+        return 0
+    }
+
+    parsed := ParseSimpleHotkey(config["hotkey"])
+    if !parsed || !InStr(parsed["modifiers"], "#") || !InStr(parsed["modifiers"], "^") {
+        return 0
+    }
+
+    if IsHotkeyModifierPressed("^") {
+        return 0
+    }
+
+    fallbackHotkey := BuildSimpleHotkey(StrReplace(parsed["modifiers"], "^", ""), parsed["key"])
+    if fallbackHotkey = "" {
+        return 0
+    }
+
+    for _, candidate in ConfiguredPullHotkeys {
+        if candidate == config {
+            continue
+        }
+
+        if candidate.Has("hotkey") && NormalizeSimpleHotkeyForComparison(candidate["hotkey"]) = fallbackHotkey {
+            return candidate
+        }
+    }
+
+    return 0
 }
 
 MonitorConfiguredPullHotkey(stateKey, config) {

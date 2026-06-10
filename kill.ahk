@@ -55,6 +55,10 @@ Kill_ExactHotkeyModifiersMatch(hotkey) {
     modifiers := ""
     hotkey := Trim(hotkey)
 
+    if RegExReplace(A_ThisHotkey, "\s+Up$") = hotkey {
+        return true
+    }
+
     while hotkey != "" {
         prefix := SubStr(hotkey, 1, 1)
         if InStr("*~$", prefix) {
