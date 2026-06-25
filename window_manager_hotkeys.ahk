@@ -2955,20 +2955,7 @@ FinalizeConfiguredPullRadialSelection(config) {
         return
     }
 
-    hwnd := candidates[selectedIndex]["hwnd"]
-    if !WinExist("ahk_id " hwnd) {
-        return
-    }
-
-    if WinGetMinMax("ahk_id " hwnd) = -1 {
-        WinRestore("ahk_id " hwnd)
-    }
-
-    if !WinActive("ahk_id " hwnd) {
-        StoreConfiguredPreviousWindow(config, WinExist("A"), hwnd)
-    }
-
-    WinActivate("ahk_id " hwnd)
+    PullConfiguredWindowByHwnd(config, candidates[selectedIndex]["hwnd"])
 }
 
 GetConfiguredWindowCandidates(config) {
@@ -3103,10 +3090,18 @@ GetConfiguredPullStateKey(config) {
 }
 
 PullConfiguredWindow(config, tileOnPullToMain := false, mouseX := "", mouseY := "", *) {
-    global ConfiguredAppPreviousWindow
-
     hwnd := FindConfiguredWindow(config["match"])
     if !hwnd {
+        return
+    }
+
+    PullConfiguredWindowByHwnd(config, hwnd, tileOnPullToMain, mouseX, mouseY)
+}
+
+PullConfiguredWindowByHwnd(config, hwnd, tileOnPullToMain := false, mouseX := "", mouseY := "") {
+    global ConfiguredAppPreviousWindow
+
+    if !WinExist("ahk_id " hwnd) {
         return
     }
 
