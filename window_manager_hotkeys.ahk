@@ -2720,16 +2720,7 @@ HandleConfiguredPullHotkeyUp(config, *) {
         return
     }
 
-    state := ConfiguredPullHotkeyState[stateKey]
-    SetTimer(state["timer"], 0)
-
-    if state["holdTriggered"] && state.Has("holdAction") && state["holdAction"] = "radial" {
-        FinalizeConfiguredPullRadialSelection(config)
-    } else if !state["holdTriggered"] {
-        PullConfiguredWindow(config)
-    }
-
-    ConfiguredPullHotkeyState.Delete(stateKey)
+    CompleteConfiguredPullHotkeyState(config, stateKey)
 }
 
 FindSyntheticCtrlFallbackConfiguredPullConfig(config) {
@@ -2778,6 +2769,11 @@ MonitorConfiguredPullHotkey(stateKey, config) {
 
     state := ConfiguredPullHotkeyState[stateKey]
 
+    if !IsConfiguredPullHotkeyStillPressed(config) {
+        CompleteConfiguredPullHotkeyState(config, stateKey)
+        return
+    }
+
     if state["holdTriggered"] {
         if state.Has("holdAction") && state["holdAction"] = "radial" {
             UpdateConfiguredPullRadialSelection()
@@ -2806,6 +2802,54 @@ MonitorConfiguredPullHotkey(stateKey, config) {
     state["holdAction"] := "tile"
     ConfiguredPullHotkeyState[stateKey] := state
     PullConfiguredWindow(config, true, state["mouseX"], state["mouseY"])
+}
+
+CompleteConfiguredPullHotkeyState(config, stateKey) {
+    global ConfiguredPullHotkeyState
+
+    if !ConfiguredPullHotkeyState.Has(stateKey) {
+        return false
+    }
+
+    state := ConfiguredPullHotkeyState[stateKey]
+    SetTimer(state["timer"], 0)
+    ConfiguredPullHotkeyState.Delete(stateKey)
+
+    if state["holdTriggered"] && state.Has("holdAction") && state["holdAction"] = "radial" {
+        FinalizeConfiguredPullRadialSelection(config)
+    } else if !state["holdTriggered"] {
+        PullConfiguredWindow(config)
+    }
+
+    return true
+}
+
+IsConfiguredPullHotkeyStillPressed(config) {
+    if !(config.Has("hotkey")) {
+        return true
+    }
+
+    parsed := ParseSimpleHotkey(config["hotkey"])
+    if !parsed {
+        return true
+    }
+
+    try {
+        if !GetKeyState(parsed["key"], "P") {
+            return false
+        }
+    } catch {
+        return true
+    }
+
+    modifiers := parsed["modifiers"]
+    for _, modifier in ["#", "^", "!", "+"] {
+        if InStr(modifiers, modifier) && !IsHotkeyModifierPressed(modifier) {
+            return false
+        }
+    }
+
+    return true
 }
 
 ShowConfiguredPullRadialMenu(config, mouseX, mouseY) {
